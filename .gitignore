@@ -1,2 +1,6 @@
-data
-./data
+# data (DVC-tracked; keep the .dvc pointer files in git)
+data/*
+!data/*.dvc
+
+# regenerable audit DB (rebuild with `python3 audit/build_audit.py`)
+audit/audit.duckdb
