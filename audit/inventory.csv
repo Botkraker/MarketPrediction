@@ -12,3 +12,4 @@ tap,tap_headlines.csv,1,283,30911,2026-09-15T19:25:21,scrape_tap.py,c1b7b3b
 bvmt_ohlcv,bvmt/ALL_DATA.csv,1,187987,9134849,2023-03-03T19:01:46,MISSING (no scraper for BVMT data in repo),NO_SCRIPT
 bvmt_ticker_names,bvmt/sotcks_list.csv,1,88,1503,2023-03-03T19:01:46,MISSING (no scraper for BVMT data in repo),NO_SCRIPT
 bvmt_market_cap,bvmt/stocks_market_cap.csv,1,88,1006,2023-03-03T19:01:46,MISSING (no scraper for BVMT data in repo),NO_SCRIPT
+bvmt_tunindex,bvmt/tunindex_2010_today.csv,1,4167,212271,2026-09-16T22:02:55.913339853,scrape_tunindex.py,2ae3352
