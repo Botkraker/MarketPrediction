@@ -9,3 +9,6 @@ lapresse,lapressheadlines.csv,1,6741,623173,2026-09-15T18:41:57,MISSING,NO_SCRIP
 leconomistmaghrebin,leconomistmaghrebin_headlines.csv,1,24698,2073040,2026-09-15T18:34:53,leconomistemaghrebin_Scraper.py,c1b7b3b
 nyt_economy,nyt_economy_headlines.csv,1,1100,82300,2026-09-16T06:43:09,scrape_nyt_economy.py,c1b7b3b
 tap,tap_headlines.csv,1,283,30911,2026-09-15T19:25:21,scrape_tap.py,c1b7b3b
+bvmt_ohlcv,bvmt/ALL_DATA.csv,1,187987,9134849,2023-03-03T19:01:46,MISSING (no scraper for BVMT data in repo),NO_SCRIPT
+bvmt_ticker_names,bvmt/sotcks_list.csv,1,88,1503,2023-03-03T19:01:46,MISSING (no scraper for BVMT data in repo),NO_SCRIPT
+bvmt_market_cap,bvmt/stocks_market_cap.csv,1,88,1006,2023-03-03T19:01:46,MISSING (no scraper for BVMT data in repo),NO_SCRIPT
