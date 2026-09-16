@@ -47,6 +47,16 @@ SOURCES = {
     "tap": ("tap_headlines.csv", ";"),
 }
 
+# BVMT market data: different schema (Ticker,Date,OHLCV / name,ticker / Ticker,MarketCap),
+# not headline+date articles, so these are inventoried alongside the news sources (step 1)
+# but NOT loaded into the `articles` table -- market-data checks (plan step 6) are a
+# separate pass, not yet implemented here.
+BVMT_FILES = {
+    "bvmt_ohlcv": "bvmt/ALL_DATA.csv",
+    "bvmt_ticker_names": "bvmt/sotcks_list.csv",
+    "bvmt_market_cap": "bvmt/stocks_market_cap.csv",
+}
+
 # Sources without a matching scrape_*.py script committed at all (gap to flag).
 SCRAPER_SCRIPT = {
     "assabah": "scrape_assabah.py",
@@ -133,6 +143,21 @@ def main():
             "extraction_date_mtime": pd.Timestamp(st.st_mtime, unit="s").isoformat(),
             "scraper_script": SCRAPER_SCRIPT[name] or "MISSING",
             "scraper_commit": latest_commit_for(ROOT / SCRAPER_SCRIPT[name]) if SCRAPER_SCRIPT[name] else "NO_SCRIPT",
+        })
+    for name, relpath in BVMT_FILES.items():
+        path = RAW / relpath
+        st = path.stat()
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
+            n_rows = sum(1 for _ in fh) - 1
+        inventory_rows.append({
+            "source": name,
+            "file": relpath,
+            "file_count": 1,
+            "row_count": n_rows,
+            "size_bytes": st.st_size,
+            "extraction_date_mtime": pd.Timestamp(st.st_mtime, unit="s").isoformat(),
+            "scraper_script": "MISSING (no scraper for BVMT data in repo)",
+            "scraper_commit": "NO_SCRIPT",
         })
     inv_df = pd.DataFrame(inventory_rows)
     inv_df.to_csv(AUDIT / "inventory.csv", index=False)
