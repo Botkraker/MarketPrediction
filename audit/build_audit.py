@@ -55,6 +55,7 @@ BVMT_FILES = {
     "bvmt_ohlcv": "bvmt/ALL_DATA.csv",
     "bvmt_ticker_names": "bvmt/sotcks_list.csv",
     "bvmt_market_cap": "bvmt/stocks_market_cap.csv",
+    "bvmt_tunindex": "bvmt/tunindex_2010_today.csv",
 }
 
 # Sources without a matching scrape_*.py script committed at all (gap to flag).
