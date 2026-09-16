@@ -1,0 +1,11 @@
+source,pct_no_date,has_time_of_day,known_defect
+assabah,0.0035,False,"date column is mostly relative Arabic text ('N hours/days/weeks ago'); 99.65% resolved to absolute dates via month-name parsing, 0.35% (195 rows) are unresolvable relative-only strings -> counted as parse failures."
+economist_tunisia_all,0.0067,False,"date-only, no time-of-day ever captured by the scraper"
+economist_tunisia_economy,0.0107,False,"date-only, no time-of-day ever captured by the scraper"
+guardian_tunisia,0.0,False,"date-only, no time-of-day ever captured by the scraper"
+ilboursa,0.0,False,"scraper (scrape_ilboursa.py) parses a full datetime (dd/mm/YYYY HH:MM) from the site but discards both the time-of-day and the article URL before writing the CSV -- scraper bug, fix + re-extract recommended."
+kapitalis,0.0,False,"date-only, no time-of-day ever captured by the scraper"
+lapresse,0.0,False,"date-only, no time-of-day ever captured by the scraper"
+leconomistmaghrebin,0.0,False,"date-only, no time-of-day ever captured by the scraper"
+nyt_economy,0.0,False,"date-only, no time-of-day ever captured by the scraper"
+tap,0.0,False,"date-only, no time-of-day ever captured by the scraper"

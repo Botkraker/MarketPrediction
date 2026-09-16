@@ -1,0 +1,11 @@
+source,file,file_count,row_count,size_bytes,extraction_date_mtime,scraper_script,scraper_commit
+assabah,assabah_headlines.csv,1,56292,4551268,2026-09-15T21:17:45,scrape_assabah.py,c1b7b3b
+economist_tunisia_all,economist_tunisia_all.csv,1,1197,62463,2026-09-16T13:25:58,scrape_economist_tunisia.py,c1b7b3b
+economist_tunisia_economy,economist_tunisia_economy.csv,1,746,40346,2026-09-16T13:25:58,scrape_economist_tunisia.py,c1b7b3b
+guardian_tunisia,guardian_tunisia_headlines.csv,1,1204,89082,2026-09-16T06:26:54,scrape_guardian.py,c1b7b3b
+ilboursa,ilboursa_headlines.csv,1,26596,2369654,2026-09-15T19:43:57,scrape_ilboursa.py,c1b7b3b
+kapitalis,kapitalis_headlines.csv,1,18000,1494382,2026-09-15T19:52:54,scrape_kapitalis.py,c1b7b3b
+lapresse,lapressheadlines.csv,1,6741,623173,2026-09-15T18:41:57,MISSING,NO_SCRIPT
+leconomistmaghrebin,leconomistmaghrebin_headlines.csv,1,24698,2073040,2026-09-15T18:34:53,leconomistemaghrebin_Scraper.py,c1b7b3b
+nyt_economy,nyt_economy_headlines.csv,1,1100,82300,2026-09-16T06:43:09,scrape_nyt_economy.py,c1b7b3b
+tap,tap_headlines.csv,1,283,30911,2026-09-15T19:25:21,scrape_tap.py,c1b7b3b
