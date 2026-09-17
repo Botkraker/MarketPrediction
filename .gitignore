@@ -4,3 +4,8 @@ data/*
 
 # regenerable audit DB (rebuild with `python3 audit/build_audit.py`)
 audit/audit.duckdb
+audit/audit.duckdb.wal
+
+# python
+__pycache__/
+.pytest_cache/

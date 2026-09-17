@@ -444,6 +444,75 @@ def main():
     lang_mix.to_csv(AUDIT / "language_mix_full_corpus.csv", index=False)
     print("Wrote audit/language_mix_full_corpus.csv")
 
+    # ---------- Step 8b: topical geography check ----------
+    # Added after finding (via preprocessing/relevance.py downstream, not this
+    # audit originally) that `assabah`'s content is Moroccan, not Tunisian --
+    # scrape_assabah.py targets assabah.ma, Morocco's domain. Completeness,
+    # coverage, dedup and language checks above all passed for it: it's a
+    # real, well-formed scrape, just not of a Tunisian source. This is a
+    # coarse gazetteer check, not a relevance classifier -- it exists to catch
+    # "wrong country entirely" cases like this one cheaply, per source, so
+    # they don't reach the relevance-tagging stage undetected again.
+    GEO_TERMS = {
+        "tunisia": {
+            "fr": ["tunisie", "tunisien"],
+            "en": ["tunisia", "tunisian"],
+            "ar": ["تونس", "تونسي"],
+        },
+        "morocco": {
+            "fr": ["maroc", "marocain", "casablanca", "rabat", "fes", "fès",
+                   "marrakech", "tanger", "agadir", "tetouan", "oujda"],
+            "en": ["morocco", "moroccan", "casablanca", "rabat", "fez",
+                   "marrakech", "tangier", "agadir"],
+            "ar": ["المغرب", "مغربي", "الرباط", "البيضاء", "الدار البيضاء",
+                   "فاس", "مراكش", "طنجة", "أكادير", "تطوان", "وجدة",
+                   "آسفي", "تارودانت", "شيشاوة"],
+        },
+        "algeria": {
+            "fr": ["algerie", "algérie", "algerien", "algérien", "alger"],
+            "en": ["algeria", "algerian", "algiers"],
+            "ar": ["الجزائر", "جزائري"],
+        },
+    }
+    LANG_BY_SOURCE = {
+        "assabah": "ar", "economist_tunisia_all": "en",
+        "economist_tunisia_economy": "en", "guardian_tunisia": "en",
+        "ilboursa": "fr", "kapitalis": "fr", "lapresse": "fr",
+        "leconomistmaghrebin": "fr", "nyt_economy": "en", "tap": "fr",
+    }
+
+    def contains_any(text, terms):
+        t = (text or "").lower()
+        return any(term in t for term in terms)
+
+    geo_rows = []
+    for name, g in articles.groupby("source"):
+        lang = LANG_BY_SOURCE.get(name, "fr")
+        n = len(g)
+        tunisia_n = int(g["headline"].map(lambda h: contains_any(h, GEO_TERMS["tunisia"][lang])).sum())
+        other_hits = {
+            country: int(g["headline"].map(lambda h: contains_any(h, by_lang[lang])).sum())
+            for country, by_lang in GEO_TERMS.items() if country != "tunisia"
+        }
+        top_other_country = max(other_hits, key=other_hits.get) if other_hits else None
+        top_other_n = other_hits.get(top_other_country, 0)
+        geo_rows.append({
+            "source": name,
+            "n": n,
+            "tunisia_mention_share": round(tunisia_n / n, 4) if n else None,
+            "tunisia_mention_n": tunisia_n,
+            "top_other_country": top_other_country,
+            "top_other_country_mention_share": round(top_other_n / n, 4) if n else None,
+            "top_other_country_mention_n": top_other_n,
+            "flag_wrong_country": bool(top_other_n > tunisia_n and top_other_n >= 0.05 * n),
+        })
+    geo_df = pd.DataFrame(geo_rows)
+    geo_df.to_csv(AUDIT / "topical_geography.csv", index=False)
+    print("Wrote audit/topical_geography.csv")
+    flagged = geo_df[geo_df["flag_wrong_country"]]
+    if len(flagged):
+        print(f"  FLAGGED as likely wrong-country source: {', '.join(flagged['source'])}")
+
     con.close()
     print("\nDone.")
 
