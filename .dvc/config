@@ -2,3 +2,6 @@
     remote = origin
 ['remote "origin"']
     url = https://dagshub.com/Botkraker/MarketPrediction.dvc
+['remote "origin-s3"']
+    url = s3://dvc
+    endpointurl = https://dagshub.com/Botkraker/MarketPrediction.s3
