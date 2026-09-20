@@ -7,10 +7,16 @@ from datetime import date
 
 # source -> (window_start or None, window_end or None). None means "use
 # whatever the raw data has". Sources not listed here are excluded (the
-# audit's "drop" decision -- currently only economist_tunisia_economy, a
-# 100%-overlapping subset of economist_tunisia_all).
+# audit's "drop" decision). Currently excluded:
+#   - economist_tunisia_economy: 100%-overlapping subset of economist_tunisia_all.
+#   - assabah: WRONG COUNTRY. scrape_assabah.py targets assabah.ma (Morocco),
+#     section /حوادث/ (crime), not the Tunisian assabah.com.tn. Evidence in
+#     audit/topical_geography.csv (flag_wrong_country=True): 11,860 Morocco
+#     mentions vs 27 Tunisia; 175 dirham vs 0 dinar; 0 Sfax/Carthage/Bizerte.
+#     Raw file and scraper are RETAINED so the audit stays reproducible --
+#     this key is the only thing gating it out of the pipeline. Re-add once
+#     scrape_assabah.py is retargeted to assabah.com.tn.
 SOURCE_WINDOWS = {
-    "assabah": (None, None),
     "ilboursa": (None, None),
     "kapitalis": (None, None),
     "leconomistmaghrebin": (None, None),
@@ -100,6 +106,7 @@ KEYWORDS_GLOBAL_LINKED = {
 # pass isn't worth doing before the keyword lists themselves are validated
 # against hand labels. Revisit if a source's automatic tag rate looks off.
 SOURCE_LANG = {
+    # assabah retained for reference only -- excluded via SOURCE_WINDOWS above.
     "assabah": "ar",
     "ilboursa": "fr",
     "kapitalis": "fr",

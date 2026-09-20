@@ -1,5 +1,9 @@
 # Data Audit Report — raw-v1
 
+**Revision 2026-09-20:** §6b added (wrong-country check — `assabah` is Moroccan, excluded);
+§8 and §9 corrected (market data is present, Step 6 is blocked by a hardcoded skip, not by
+missing data). Everything else is the original raw-v1 text.
+
 Scope: the 10 scraper outputs currently in `data/raw/`. Produced by `audit/build_audit.py`
 (deterministic, re-runnable; outputs live alongside this report in `audit/`). Nothing in
 `data/raw/` was edited — every defect below is documented for a scraper fix + re-extract,
@@ -134,6 +138,77 @@ should be human vs. automatic, not automatic vs. itself.
 | lapresse | 93.4% French, 3.9% "ca" (Catalan) | the Catalan tag is very likely a `langdetect` misfire on short French headlines — check in the manual pass |
 | economist_tunisia_all/economy, guardian, nyt | 88–99% English | expected |
 
+## 6b. Topical geography — wrong-country check (added 2026-09-20)
+
+Added after `preprocessing/relevance.py` showed `assabah` losing 99.87% of its rows to the
+relevance filter. The cause was not the filter: **`scrape_assabah.py` targets the wrong
+country.** Output: `topical_geography.csv` (per-source, regenerated on every audit run).
+
+`BASE_URL` in `scrape_assabah.py:19` is `https://assabah.ma/category/%D8%AD%D9%88%D8%A7%D8%AF%D8%AB/`
+— `.ma` is Morocco's ccTLD, and the category decodes to `حوادث` ("accidents/crime").
+The intended source is Tunisia's `assabah.com.tn`. The masthead الصباح / "Assabah" belongs to
+a well-known daily in **both** countries, which is how the wrong domain was reached.
+
+| source | n | tunisia share | top other country | its share | flagged |
+|---|---:|---:|---|---:|---|
+| **assabah** | 56,292 | **0.0005** | morocco | **0.2107** | **True** |
+| economist_tunisia_all | 1,197 | 0.0326 | morocco | 0.0017 | False |
+| economist_tunisia_economy | 746 | 0.0241 | morocco | 0.0013 | False |
+| guardian_tunisia | 1,204 | 0.6030 | algeria | 0.0058 | False |
+| ilboursa | 26,596 | 0.1891 | morocco | 0.0459 | False |
+| kapitalis | 18,000 | 0.5189 | morocco | 0.0130 | False |
+| lapresse | 6,741 | 0.4142 | morocco | 0.0178 | False |
+| leconomistmaghrebin | 24,698 | 0.2797 | morocco | 0.0128 | False |
+| nyt_economy | 1,100 | 0.0000 | morocco | 0.0000 | False |
+| tap | 283 | 0.1378 | morocco | 0.0106 | False |
+
+Flag rule: `top_other_n > tunisia_n AND top_other_n >= 0.05 * n`. Both conditions are required
+so that a source is not flagged on incidental foreign coverage. Exactly one source fires.
+
+**Corroborating markers** (counts over all 56,292 `assabah` headlines). Morocco uses the
+dirham, Tunisia the dinar:
+
+| marker | hits |
+|---|---:|
+| درهم (dirham, MA currency) | 175 |
+| دينار (dinar, TN currency) | **0** |
+| مراكش (Marrakech) | 1,621 |
+| طنجة (Tangier) | 1,630 |
+| أكادير (Agadir) | 546 |
+| صفاقس (Sfax, TN 2nd city) | **0** |
+| قرطاج (Carthage) | **0** |
+| بنزرت (Bizerte) | **0** |
+| الملك ("the King") | 239 |
+
+Zero dinar mentions, zero Sfax/Carthage/Bizerte, and 239 references to a monarch in a
+republic that has had none since 1957. The `langdetect` pass in §6 reported 99.6% Arabic for
+this source and passed it — **language is not provenance**, which is precisely the gap this
+check closes.
+
+### Known blind spots of this check
+
+- **Domestic sources under-report their own country.** `ilboursa` shows 18.9% Tunisia against
+  4.6% Morocco (1,220 headlines). This is *not* a second wrong-country case: a Tunisian
+  financial outlet rarely names Tunisia in a headline while routinely covering Maghreb
+  markets. The 5% floor plus the dominance condition is what keeps it unflagged.
+- **Uninformative for non-geographic sources.** `nyt_economy` scores 0.0 on every country. It
+  is the `global_linked` source, relevant via Fed / oil / ECB keywords, never via geography.
+  Read its row as "not applicable", not as "clean".
+- Gazetteer matching is substring-based and coarse by design. It answers "is this the wrong
+  country entirely", not "is this on-topic".
+
+### Action taken
+
+`assabah` is excluded from the preprocessing pipeline by removing its key from
+`config.SOURCE_WINDOWS` (`clean.py` iterates that dict). **Nothing was deleted**:
+`data/raw/assabah_headlines.csv`, `scrape_assabah.py` and `io_raw.SOURCES` are all retained so
+this audit stays reproducible and this section's evidence can be regenerated. `funnel.csv` now
+records `assabah, raw=56292, cleaned=0, relevant=0, canonical=0` — an explicit exclusion, not a
+silent absence. Canonical corpus: 42,713 → **42,645** (−68; no other source changed).
+
+Re-add the `SOURCE_WINDOWS` key once `scrape_assabah.py` is retargeted to `assabah.com.tn`.
+The Arabic relative-date parsing (`منذ 9 ساعات`) is already written and reusable.
+
 ## 7. Spot-check worksheet (step 5)
 
 `spot_check_worksheet.csv` has 10 random rows per source for manual comparison against the
@@ -143,9 +218,18 @@ here.
 
 ## 8. Decisions (step 9)
 
-- **Overlap window / go-no-go (market data)**: **BLOCKED.** No BVMT data in the repo. Cannot
-  compute the training/test-block overlap window until a market-data source is identified and
-  ingested (see §0.3). This is the biggest open item before any modeling work can start.
+- **Overlap window / go-no-go (market data)**: ~~**BLOCKED.**~~ **SUPERSEDED 2026-09-20.**
+  BVMT data has since been added to the repo (commits `690dc1f`, `2ae3352`) and *is* inventoried
+  by this audit: `bvmt/ALL_DATA.csv` (187,987 OHLCV rows), `bvmt/tunindex_2010_today.csv`
+  (4,167 sessions, 2010→2026), plus ticker and market-cap tables. See `inventory.csv`.
+  Two follow-ups remain, both in `build_audit.py`, neither yet fixed:
+  1. **Step 6 is hardcoded to skip** (`build_audit.py:313` prints "no market data file in repo"
+     unconditionally). Missing sessions, high<low and stale-price checks are therefore still
+     uncomputed even though the inputs are present. The module docstring (lines 6-7) repeats
+     the same stale claim.
+  2. `BVMT_FILES` inventory rows hardcode `scraper_script = "MISSING (no scraper for BVMT data
+     in repo)"` (`build_audit.py:160`) although `scrape_tunindex.py` exists in the repo.
+  The trading calendar for news alignment should be derived from `tunindex_2010_today.csv`.
 - **Thin-source rule** ("drop/merge if >50% of trading days have no article" — proxied here by
   calendar days, pending the real trading calendar): by the calendar-day proxy, no source
   exceeds 50% zero-days except none currently — `economist_tunisia_all` (93%) and
@@ -164,7 +248,9 @@ here.
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):
-  **not run** — no market data file exists in the repo.
+  **still not run — but no longer for the stated reason.** Market data now exists and is
+  inventoried; the skip at `build_audit.py:313` is unconditional. See §8. This is now a code
+  fix, not a data gap.
 - Trading-day-based zero-news-day share and the overlap-window computation in step 9: **not
   run** — same reason; calendar-day proxies were substituted and labeled as such throughout.
 - Live-site spot checks (step 5) and hand-labeling (step 8): **template generated, not filled

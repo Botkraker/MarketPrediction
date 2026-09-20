@@ -1,0 +1,11 @@
+source,n,tunisia_mention_share,tunisia_mention_n,top_other_country,top_other_country_mention_share,top_other_country_mention_n,flag_wrong_country
+assabah,56292,0.0005,27,morocco,0.2107,11860,True
+economist_tunisia_all,1197,0.0326,39,morocco,0.0017,2,False
+economist_tunisia_economy,746,0.0241,18,morocco,0.0013,1,False
+guardian_tunisia,1204,0.603,726,algeria,0.0058,7,False
+ilboursa,26596,0.1891,5030,morocco,0.0459,1220,False
+kapitalis,18000,0.5189,9340,morocco,0.013,234,False
+lapresse,6741,0.4142,2792,morocco,0.0178,120,False
+leconomistmaghrebin,24698,0.2797,6907,morocco,0.0128,317,False
+nyt_economy,1100,0.0,0,morocco,0.0,0,False
+tap,283,0.1378,39,morocco,0.0106,3,False

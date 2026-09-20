@@ -1,0 +1,2 @@
+rows,first_session,last_session,unparseable_dates,duplicate_sessions,weekdays_in_range,weekdays_absent,weekdays_absent_share,high_lt_low,close_outside_high_low,open_outside_high_low,nonpositive_close,zero_volume_sessions,stale_close_runs,null_ohlcv_cells
+4167,2010-01-04,2026-09-16,0,0,4358,191,0.0438,0,0,69,0,56,20,0
