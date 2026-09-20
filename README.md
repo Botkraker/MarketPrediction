@@ -153,10 +153,12 @@ Both documented with evidence in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sectio
 
 Checked against the v1.1 architecture blueprint; full table in
 [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8g. Fixed: the §6.2 metric set and
-the §6.3 five-session embargo. **The largest remaining gap is §5.2's F1 rung** —
-the ladder is F0 (price) → F1 (+ macro/FX: TND rates, Brent, European index
-returns) → F2 (+ sentiment), and there is no macro or FX data in this repo, so H1
-is currently tested against F0 rather than F1.
+the §6.3 five-session embargo. On §5.2's F1 rung: the energy control was **tested rather than assumed**. Brent
+daily spot (EIA, 97.5% session coverage) has no measurable relationship with
+Tunindex — r = +0.020 ns against next-session returns, R² = 0.0004 versus 0.069 for
+the last closed return. H1 is therefore reported against F0, with that deviation
+documented and measured. EUR/TND and European index returns remain untested; the EU
+demand channel is the more plausible of the two.
 
 Also outstanding: F0 lacks day-of-week and volume change, F2 cannot split FR/AR
 (no Arabic corpus), F3 is not its own rung, no block-bootstrap CIs, no purged
