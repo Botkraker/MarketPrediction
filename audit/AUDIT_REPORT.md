@@ -375,7 +375,25 @@ off-topic items (including a **weather forecast**), questions, and literal
 
 Distribution: positive 58.8%, neutral 9.4%. For financial headlines neutral should
 dominate. **Consequence:** a null H1 would be uninterpretable — indistinguishable
-from "we measured the wrong construct". Fix the prompt before re-annotating.
+from "we measured the wrong construct".
+
+**Action taken.** `llm_annotate.py` now carries versioned prompts. `PROMPT_V1` is kept
+byte-for-byte (a test asserts it) so the original 3,000 labels remain attributable;
+`PROMPT_V2` is the default for new runs. v2 states the question as expected market
+impact on Tunisian listed companies, makes `neutral` the explicit default with the
+reasoning that "a label of neutral is a correct and informative answer, not a failure
+to decide", defines all five labels by mechanism, names the observed traps (rising
+inflation/debt/money supply despite the word *hausse*; draft laws; `inchangé`;
+questions; topic-is-not-sentiment), and carries ten worked examples drawn from the
+corpus but **excluded from the gold set** so they cannot leak. Every label now records
+`annotator_N_prompt`.
+
+**v1 and v2 labels are not comparable and must never be pooled.** The 3,000 existing
+labels are v1. Re-annotation under v2 produces a separate annotator column.
+
+**Open question for the smoke test:** v1 gave a 9.4% neutral share. If v2 does not move
+that substantially upward on a 50-row trial, the limit is model capability, not prompt
+wording, and the remedy is a larger model rather than more instruction.
 
 ### 2. Price-report headlines launder momentum into the sentiment channel
 
