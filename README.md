@@ -88,11 +88,16 @@ baseline exists so that a fine-tuned model can be judged against something.
 
 Both documented with evidence in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8d.
 
-1. **The annotation prompt does not define the task.** It specifies JSON formatting
-   but never defines the labels, never says when `neutral` applies, and never anchors
-   sentiment to market impact rather than tone. The labels track growth-flavoured
-   vocabulary instead ("a draft environmental code" scores positive). Fix the prompt
-   before re-annotating.
+1. **The annotation prompt did not define the task.** v1 specified JSON formatting but
+   never defined the labels, never said when `neutral` applies, and never anchored
+   sentiment to market impact rather than tone; its labels track growth-flavoured
+   vocabulary instead ("a draft environmental code" scores positive), giving 58.8%
+   positive and only 9.4% neutral. **Addressed:** `llm_annotate.py` now carries
+   versioned prompts, and `PROMPT_V2` (the default) states the question as expected
+   market impact, makes `neutral` the explicit default, defines each label by
+   mechanism, names the observed traps and carries ten worked examples. `PROMPT_V1` is
+   frozen so the original 3,000 labels stay attributable. **The existing 3,000 labels
+   are still v1 — v1 and v2 labels are not comparable and must not be pooled.**
 2. **Price-report headlines launder momentum into sentiment.** 10% of relevant
    headlines restate the index's own move; their direction words match that day's
    return with 84.3% accuracy, and read as a next-session feature they reach 0.5640
@@ -137,6 +142,9 @@ No environment variables are read by the code. Settings live in files:
 | `ARABIZI_MIN_WORDS` | preprocessing/config.py | `2` | Words needed to flag a headline as Arabizi |
 | Relevance keyword lists | preprocessing/config.py | first-pass | Not yet validated against hand labels |
 | `--endpoint`, `--model` | `llm_annotate.py` flags | `http://localhost:1234/api/v1/chat`, `qwen2.5-7b-instruct-1m` | Local annotation server |
+| `--annotator` | `llm_annotate.py` flag | `1` | Which `annotator_N_*` columns to write |
+| `--prompt-version` | `llm_annotate.py` flag | `v2` | `v1` produced the original 3,000 labels and is frozen; `v2` defines the task |
+| `PRICE_REPORT_PATTERN` | [preprocessing/config.py](preprocessing/config.py) | regex | Flags headlines that restate the index's own move (10% of the corpus) |
 
 ## Usage
 
@@ -161,7 +169,7 @@ Build and annotate the sentiment gold set (defaults are set in each script):
 ```bash
 python preprocessing/gold.py --target 3000
 python preprocessing/llm_annotate.py                      # annotator 1
-python preprocessing/llm_annotate.py --annotator 2 --model <other-model>
+python preprocessing/llm_annotate.py --annotator 2 --model <other-model>  # prompt v2 by default
 python preprocessing/agreement.py                         # Fleiss / Cohen kappa
 python preprocessing/adjudicate_from_annotator.py --method majority
 python preprocessing/split.py
@@ -170,6 +178,19 @@ python preprocessing/split.py
 Use models from **different families** for annotators 2+; a second model from the
 same family measures its own consistency, not agreement. Majority ties are left
 blank on purpose and `split.py` refuses the file until they are resolved.
+
+Smoke-test a model on ~50 rows before committing to a full 3,000-row run — different
+model families emit different JSON dialects, and the parser's fallback path is where
+they break:
+
+```bash
+head -51 data/curated/sentiment_gold_annotation1.csv > /tmp/smoke.csv
+python preprocessing/llm_annotate.py --input /tmp/smoke.csv --annotator 2 --prompt-version v2
+```
+
+Watch the **neutral share**: v1 produced 9.4%, which is implausibly low for financial
+headlines. If v2 does not move it substantially upward, the limit is model capability
+rather than prompt wording.
 
 Build daily features and run the price-only baseline:
 
@@ -206,7 +227,7 @@ python audit/build_audit.py
 python -m pytest preprocessing
 ```
 
-56 tests, all passing.
+60 tests, all passing.
 
 ## Contributing
 
