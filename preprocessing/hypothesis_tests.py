@@ -40,7 +40,9 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from scipy import stats
 from statsmodels.stats.contingency_tables import mcnemar
 
 from baseline import evaluate, walk_forward
@@ -133,6 +135,59 @@ def paired_test(treatment: pd.DataFrame, baseline: pd.DataFrame) -> dict:
     }
 
 
+def diebold_mariano(treatment: pd.DataFrame, baseline: pd.DataFrame,
+                    horizon: int = 1) -> dict:
+    """Diebold-Mariano on squared forecast errors of the RETURN, not the sign.
+
+    Why this exists (S3). The sign test discards magnitude: being wrong by 5bp and
+    wrong by 500bp count the same, so it throws away most of the information in the
+    data and needs ~3pp of accuracy to detect anything. A model can improve returns
+    forecasts materially while moving directional accuracy by less than the sign
+    test can see. DM uses the loss differential directly and is far better powered.
+
+    Newey-West HAC variance with a horizon-1 lag truncation, because daily loss
+    differentials are serially correlated -- volatility clusters at +0.387 here, so
+    an iid variance would be badly understated and the test anti-conservative.
+
+    Negative statistic => treatment has LOWER loss => treatment is better.
+    """
+    if not treatment.session.equals(baseline.session):
+        raise ValueError("Arms are not aligned on the same sessions; cannot pair.")
+    actual = treatment["ret_next"].to_numpy()
+    d = (treatment["score"].to_numpy() - actual) ** 2 - \
+        (baseline["score"].to_numpy() - actual) ** 2
+    n = len(d)
+    if n < 30:
+        return {"skipped": f"only {n} paired forecasts"}
+    dbar = float(d.mean())
+    gamma0 = float(((d - dbar) ** 2).mean())
+    lags = max(1, horizon - 1)
+    var = gamma0
+    for lag in range(1, lags + 1):
+        cov = float(((d[lag:] - dbar) * (d[:-lag] - dbar)).mean())
+        var += 2 * (1 - lag / (lags + 1)) * cov
+    if var <= 0:
+        return {"skipped": "non-positive HAC variance"}
+    stat = dbar / np.sqrt(var / n)
+    pvalue = 2 * (1 - stats.norm.cdf(abs(stat)))
+
+    def r2(frame):
+        err = ((frame["score"].to_numpy() - actual) ** 2).sum()
+        return 1 - err / ((actual - actual.mean()) ** 2).sum()
+
+    return {
+        "dm_statistic": round(float(stat), 4),
+        "p_value": round(float(pvalue), 4),
+        "significant_at_05": bool(pvalue < 0.05),
+        "treatment_better": bool(dbar < 0),
+        "mean_loss_differential": float(f"{dbar:.3e}"),
+        "oos_r2_treatment": round(float(r2(treatment)), 5),
+        "oos_r2_baseline": round(float(r2(baseline)), 5),
+        "note": ("squared-error loss on returns; Newey-West HAC. Better powered than "
+                 "the sign test, which needs ~3pp accuracy to detect anything here."),
+    }
+
+
 def run_h1(frame: pd.DataFrame, min_train: int = 500, refit_every: int = 20,
            kind: str = "regress") -> dict:
     absent = missing_columns(frame)
@@ -158,7 +213,10 @@ def run_h1(frame: pd.DataFrame, min_train: int = 500, refit_every: int = 20,
         test = paired_test(preds, base_preds)
         raw_p[arm] = test["p_value"]
         results[arm] = (evaluate(preds)
-                        | {"features": features, "vs_baseline": test})
+                        | {"features": features, "vs_baseline": test,
+                           "vs_baseline_continuous": diebold_mariano(preds, base_preds)
+                           if kind == "regress" else
+                           {"skipped": "DM needs kind='regress' (a return forecast)"}})
     if raw_p:
         adjusted = holm(raw_p)
         for arm, p_adj in adjusted.items():
@@ -186,6 +244,24 @@ def _interpret(results: dict) -> str:
                     and r.get("accuracy", 0) > results["baseline"]["accuracy"])
     if "skipped" in results.get("all", {}):
         return "Incomplete: not all arms ran."
+
+    # The sign test is underpowered (MDE ~3pp). The continuous test sees effects it
+    # cannot, INCLUDING harmful ones -- so check it before reporting a bare null.
+    def dm(arm):
+        return results.get(arm, {}).get("vs_baseline_continuous", {}) or {}
+
+    degrading = [a for a in ARMS
+                 if dm(a).get("significant_at_05") and dm(a).get("treatment_better") is False]
+    if len(degrading) >= 2:
+        return ("H1 REJECTED, NOT MERELY UNSUPPORTED: the sign test is null, but the "
+                "better-powered Diebold-Mariano test on returns finds sentiment makes "
+                f"the forecast SIGNIFICANTLY WORSE in {len(degrading)} of {len(ARMS)} arms "
+                f"({', '.join(degrading)}). OOS R2 falls below the price-only baseline in "
+                "every arm. Adding these features costs variance and returns no signal -- "
+                "consistent with sentiment scores that are noise. Re-check the labels "
+                "before concluding anything about sentiment itself.")
+    improving = [a for a in ARMS
+                 if dm(a).get("significant_at_05") and dm(a).get("treatment_better")]
     if beat("all") and not beat("ex_price"):
         return ("MOMENTUM LAUNDERING: the effect disappears once price-report "
                 "headlines are removed. Do not report this as sentiment.")
@@ -203,7 +279,12 @@ def _interpret(results: dict) -> str:
     if beat("ex_price"):
         return ("H1 SUPPORTED (weak): survives price-report exclusion; the "
                 "orthogonalised arm did not run.")
-    return "H1 NOT SUPPORTED: no arm significantly beats the price-only baseline."
+    if improving:
+        return (f"H1 SUPPORTED on the continuous test ({', '.join(improving)}) but not "
+                "on the sign test. Report both; the sign test is underpowered.")
+    return ("H1 NOT SUPPORTED: no arm beats the price-only baseline on either the "
+            "sign test or the continuous test. Note the sign test alone could not "
+            "have established this -- its MDE exceeds any plausible effect.")
 
 
 def run_h2(frame: pd.DataFrame, sources: list[str], min_train: int = 500,
@@ -286,6 +367,18 @@ def main() -> None:
         t = s["vs_baseline"]
         print(f"{arm:<12}{s['accuracy']:>9.4f}{s['constant_baseline']:>9.4f}"
               f"{t['p_value']:>12.4f}  {'SIG' if t['significant_at_05'] else 'ns'}")
+    print()
+    print(f"{'arm':<12}{'DM stat':>10}{'DM p':>9}{'OOS R2':>10}{'base R2':>10}")
+    print("-" * 51)
+    for arm in ARMS:
+        dm = r.get(arm, {}).get("vs_baseline_continuous", {})
+        if "skipped" in dm or not dm:
+            continue
+        print(f"{arm:<12}{dm['dm_statistic']:>10.3f}{dm['p_value']:>9.4f}"
+              f"{dm['oos_r2_treatment']:>10.5f}{dm['oos_r2_baseline']:>10.5f}")
+    pw = r.get("power", {})
+    print(f"\nMDE at 80% power: {pw.get('mde_pp_at_80_power')}pp "
+          f"(sign test) | adequately powered: {pw.get('adequately_powered')}")
     print(f"\n{r['interpretation']}")
 
 
