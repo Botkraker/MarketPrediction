@@ -742,6 +742,88 @@ headline statistic for this scale, and v1's labels carry a **measurable, systema
 bias rather than random noise — which is consistent with §8e's finding that adding
 v1-derived sentiment makes the return forecast significantly worse.
 
+## 8g. Conformance to the architecture blueprint (v1.1) — 2026-09-20
+
+Checked against `Tunindex_Sentiment_Pipeline_Architecture_Blueprint.docx`. Three
+items were not gaps but **violations of an explicit instruction**; two are fixed.
+
+### Fixed: §6.2 — raw accuracy was the headline metric, which the blueprint forbids
+
+> "Balanced accuracy, MCC — robust to class imbalance; **replaces raw accuracy as
+> headline**." Primary metric: **ROC-AUC**.
+
+Every figure reported before this point (the 0.5736 H1 bar, the 0.5493 constant, the
+whole sensitivity grid) was raw accuracy. At a 54.9% base rate that metric is nearly
+blind, which is exactly why the blueprint rules it out. `baseline.evaluate()` now
+reports ROC-AUC, balanced accuracy, MCC and Brier alongside it.
+
+| feature set | AUC | balAcc | MCC | Brier | acc | const |
+|---|---:|---:|---:|---:|---:|---:|
+| momentum (ret_lag0) | 0.5880 | 0.5565 | 0.1211 | 0.2897 | 0.5743 | 0.5493 |
+| momentum3 | 0.5943 | 0.5571 | 0.1219 | 0.2866 | 0.5743 | 0.5493 |
+| momentum3_vol | **0.5979** | **0.5720** | **0.1501** | 0.2848 | 0.5859 | 0.5493 |
+| momentum3_news | 0.5954 | 0.5619 | 0.1303 | 0.2861 | 0.5773 | 0.5493 |
+
+**AUC ≈ 0.59 against a 0.5 null is a clearer statement than "0.574 versus 0.549".**
+The blueprint's metric choice was correct and the accuracy framing was obscuring the
+result in both directions.
+
+A second bug surfaced here: for `kind="classify"` the stored score was the predicted
+class, not a probability, so an AUC computed on it would have been meaningless.
+`walk_forward` now uses `predict_proba` for classification.
+
+### Fixed: §6.3 — no embargo between train and test
+
+The blueprint requires a **5-session embargo**; `baseline.walk_forward` trained on
+`X[:i]` to predict session `i`, gap zero. With `corr(ret_t-1, ret_t) = +0.263` the
+adjacent sessions are the ones most correlated with the target.
+
+`EMBARGO_SESSIONS = 5` is now the default. Measured cost:
+
+| embargo | 0 | 1 | 5 | 10 | 20 |
+|---|---:|---:|---:|---:|---:|
+| AUC | 0.5943 | 0.5942 | **0.5943** | 0.5940 | 0.5942 |
+
+Essentially free, because the model refits every 20 sessions. **That is a result,
+not a non-finding:** the momentum edge is not an artifact of training on sessions
+adjacent to the target.
+
+### NOT fixed: §5.2 — the F1 rung is missing entirely
+
+The feature ladder is F0 (price) → **F1 (+ macro/FX: TND rates, Brent, European
+index returns)** → F2 (+ local sentiment) → F3 (+ international sentiment). There is
+**no macro or FX data in this repo at all**, so every H1 test so far compares
+sentiment against **F0**, not F1 as the blueprint specifies. If Brent or EUR/TND
+explains what sentiment appeared to explain, the current design cannot tell.
+This is the largest remaining structural gap.
+
+### Other outstanding blueprint items
+
+| § | requirement | status |
+|---|---|---|
+| 5.2 F0 | lagged returns 1–5, rolling vol, **volume change**, **day-of-week** | partial: 3 lags, no day-of-week, no volume change |
+| 5.2 F2 | local sentiment **split FR / AR** | FR only — no Arabic corpus (§8e/S5) |
+| 5.2 F3 | international sentiment as its own rung | tagged `global_linked`, not a separate feature set |
+| 6.1 | initial training ≈3 years, test blocks of 3 months | `min_train=500` (~2y), refit every 20 sessions |
+| 6.2 | block-bootstrap CIs on AUC | absent |
+| 6.3 | purged, embargoed k-fold as a diagnostic | absent |
+| 6.3 | per-block metrics over time; COVID-2020 examined separately | `by_year` only, no shock analysis |
+| 3.1 §6 | MinHash LSH deduplication | deviated to a template key — measured and justified (M5) |
+| 3.1 §3 | language ID **per paragraph** | assigned per source (§8e/S5) |
+| 1.4 | source registry with [Confirmed] / [To be verified] | not in that form; §1-2 cover the same ground |
+
+**Note on §6.1.** The blueprint's "initial training ≈3 years" is ~750 sessions, and
+the sensitivity grid (M1 follow-up) shows the price-only result loses significance at
+`min_train=750`. Conforming to the blueprint on this point produces a null on the
+sign test. The AUC and the Diebold-Mariano test are the metrics that survive it.
+
+### Where the work exceeds the blueprint
+
+No price-report confound control, orthogonalised arm, Holm correction, power
+analysis, Diebold-Mariano test, wrong-country provenance check or parameter
+sensitivity grid appears in the blueprint. Each came out of the audit or the
+adversarial review, and several caught real defects the blueprint would not have.
+
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):

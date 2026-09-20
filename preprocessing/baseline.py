@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import (balanced_accuracy_score, brier_score_loss,
+                             matthews_corrcoef, roc_auc_score)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -44,11 +46,26 @@ FEATURE_SETS = {
 }
 
 
+# Blueprint section 6.3: "5-session embargo between train and test". With return
+# autocorrelation at +0.263 and |ret| at +0.387, the sessions immediately before a
+# prediction are the ones most correlated with it, so training on them is the
+# closest thing to leakage this design can still contain.
+EMBARGO_SESSIONS = 5
+
+
 def walk_forward(frame: pd.DataFrame, features: list[str],
                  min_train: int = 500, refit_every: int = 20,
-                 kind: str = "classify") -> pd.DataFrame:
-    """Expanding-window walk-forward. Refits every `refit_every` sessions; between
-    refits the last fitted model predicts, which is what a deployed model does."""
+                 kind: str = "classify",
+                 embargo: int = EMBARGO_SESSIONS) -> pd.DataFrame:
+    """Expanding-window walk-forward with an embargo.
+
+    Refits every `refit_every` sessions; between refits the last fitted model
+    predicts, which is what a deployed model does.
+
+    `embargo` drops the last `embargo` sessions before the prediction point from
+    the training slice (blueprint 6.3). Without it the model trains on the very
+    sessions whose returns are most correlated with the target. Set embargo=0
+    only to quantify what the embargo costs."""
     data = frame.dropna(subset=features + ["ret_next"]).reset_index(drop=True)
     y = (data["ret_next"] > 0).astype(int).to_numpy()
     target = data["ret_next"].to_numpy()
@@ -56,25 +73,33 @@ def walk_forward(frame: pd.DataFrame, features: list[str],
 
     rows, model, train_majority = [], None, None
     for i in range(min_train, len(data)):
+        cut = max(1, i - embargo)          # strictly-before, minus the embargo
         if model is None or (i - min_train) % refit_every == 0:
             # strictly-before slice: nothing at or after i is visible
             if kind == "classify":
                 model = make_pipeline(StandardScaler(),
                                       LogisticRegression(max_iter=1000, C=1.0))
-                model.fit(X[:i], y[:i])
+                model.fit(X[:cut], y[:cut])
             else:
                 # Regress the RETURN and take the sign. Classifying the direction
                 # throws away magnitude, and the binary label is dominated by the
                 # upward drift, so the classifier collapses toward "always up".
                 model = make_pipeline(StandardScaler(), LinearRegression())
-                model.fit(X[:i], target[:i])
-            train_majority = int(y[:i].mean() >= 0.5)
-        raw = float(model.predict(X[i:i + 1])[0])
+                model.fit(X[:cut], target[:cut])
+            train_majority = int(y[:cut].mean() >= 0.5)
+        if kind == "classify":
+            # predict_proba, not predict: the class label carries no ranking
+            # information, so ROC-AUC computed on it would be nonsense.
+            score = float(model.predict_proba(X[i:i + 1])[0, 1])
+            pred = int(score > 0.5)
+        else:
+            score = float(model.predict(X[i:i + 1])[0])
+            pred = int(score > 0)
         rows.append({
             "session": data["session"].iloc[i],
             "y_true": int(y[i]),
-            "y_pred": int(raw > 0.5) if kind == "classify" else int(raw > 0),
-            "score": raw,
+            "y_pred": pred,
+            "score": score,
             "y_constant": train_majority,
             "ret_next": float(data["ret_next"].iloc[i]),
         })
@@ -82,12 +107,26 @@ def walk_forward(frame: pd.DataFrame, features: list[str],
 
 
 def evaluate(preds: pd.DataFrame) -> dict:
+    """Blueprint section 6.2: ROC-AUC is primary; balanced accuracy and MCC REPLACE
+    raw accuracy as the headline, because at a 54.9% base rate accuracy is nearly
+    blind. Raw accuracy is still reported, for comparability with the reference
+    study and because the constant-baseline comparison is stated in those units."""
     acc = float((preds.y_pred == preds.y_true).mean())
     const = float((preds.y_constant == preds.y_true).mean())
     # Binomial SE of the model's accuracy -- an honest +/- on the headline number
     se = float(np.sqrt(acc * (1 - acc) / len(preds)))
+    y, s = preds.y_true.to_numpy(), preds.score.to_numpy()
+    auc = float(roc_auc_score(y, s)) if len(set(y)) > 1 else float("nan")
+    # Brier needs a probability. A regression score is a return, not one, so rank-
+    # normalise to [0,1] rather than pretending the raw value is calibrated.
+    prob = (pd.Series(s).rank(pct=True).to_numpy() if s.min() < 0 or s.max() > 1
+            else s)
     return {
         "n_predictions": int(len(preds)),
+        "roc_auc": round(auc, 4),
+        "balanced_accuracy": round(float(balanced_accuracy_score(y, preds.y_pred)), 4),
+        "mcc": round(float(matthews_corrcoef(y, preds.y_pred)), 4),
+        "brier": round(float(brier_score_loss(y, prob)), 4),
         "accuracy": round(acc, 4),
         "accuracy_se": round(se, 4),
         "constant_baseline": round(const, 4),
@@ -124,12 +163,15 @@ def main() -> None:
     args = parser.parse_args()
     results = run(args.output.parent / "daily_features.parquet" if False else DEFAULT_INPUT,
                   args.output, args.min_train, args.refit_every)
-    print(f"{'feature set':<18}{'n':>6}{'acc':>9}{'+/-':>7}{'const':>9}{'lift':>8}")
-    print("-" * 57)
+    print(f"{'feature set':<24}{'n':>6}{'AUC':>8}{'balAcc':>8}{'MCC':>8}"
+          f"{'Brier':>8}{'acc':>8}{'const':>8}")
+    print("-" * 78)
     for name, s in results.items():
-        print(f"{name:<18}{s['n_predictions']:>6}{s['accuracy']:>9.4f}"
-              f"{s['accuracy_se']:>7.4f}{s['constant_baseline']:>9.4f}"
-              f"{s['lift_over_constant']:>+8.4f}")
+        print(f"{name:<24}{s['n_predictions']:>6}{s['roc_auc']:>8.4f}"
+              f"{s['balanced_accuracy']:>8.4f}{s['mcc']:>8.4f}{s['brier']:>8.4f}"
+              f"{s['accuracy']:>8.4f}{s['constant_baseline']:>8.4f}")
+    print("\nBlueprint 6.2: AUC is primary; balanced accuracy and MCC replace raw "
+          "accuracy as headline.")
 
 
 if __name__ == "__main__":
