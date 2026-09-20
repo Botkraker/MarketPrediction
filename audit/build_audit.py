@@ -3,10 +3,13 @@ Data audit for ProjectNLP headline sources.
 
 Adapted from the original audit plan to the ACTUAL raw schema found in
 data/raw/*.csv: every source is a flat CSV with only `headline` and `date`
-columns (no url, no body/article text, no time-of-day). There is no market
-(BVMT) data in the repo, so all market-data-dependent steps (plan step 6,
-and the overlap/go-no-go decision in step 9) are marked BLOCKED rather than
-computed.
+columns (no url, no body/article text, no time-of-day).
+
+BVMT market data (ALL_DATA.csv, tunindex_2010_today.csv, ticker list, market
+caps) IS present under data/raw/bvmt/ and is inventoried and checked by step 6,
+which also writes the trading calendar used for news alignment. Earlier
+revisions of this file asserted there was no market data and hardcoded the
+step-6 skip; that was stale -- see AUDIT_REPORT.md section 8.
 
 Never edits the raw CSVs. Reads them as-is and writes all outputs under audit/.
 """
@@ -51,6 +54,15 @@ SOURCES = {
 # not headline+date articles, so these are inventoried alongside the news sources (step 1)
 # but NOT loaded into the `articles` table -- market-data checks (plan step 6) are a
 # separate pass, not yet implemented here.
+# Which BVMT files have a scraper in the repo. Only tunindex is scraped here;
+# ALL_DATA / ticker list / market cap were obtained out-of-band (no script).
+BVMT_SCRAPER = {
+    "bvmt_ohlcv": None,
+    "bvmt_ticker_names": None,
+    "bvmt_market_cap": None,
+    "bvmt_tunindex": "scrape_tunindex.py",
+}
+
 BVMT_FILES = {
     "bvmt_ohlcv": "bvmt/ALL_DATA.csv",
     "bvmt_ticker_names": "bvmt/sotcks_list.csv",
@@ -157,8 +169,9 @@ def main():
             "row_count": n_rows,
             "size_bytes": st.st_size,
             "extraction_date_mtime": pd.Timestamp(st.st_mtime, unit="s").isoformat(),
-            "scraper_script": "MISSING (no scraper for BVMT data in repo)",
-            "scraper_commit": "NO_SCRIPT",
+            "scraper_script": BVMT_SCRAPER[name] or "MISSING (obtained out-of-band, no script in repo)",
+            "scraper_commit": (latest_commit_for(ROOT / BVMT_SCRAPER[name])
+                               if BVMT_SCRAPER[name] else "NO_SCRIPT"),
         })
     inv_df = pd.DataFrame(inventory_rows)
     inv_df.to_csv(AUDIT / "inventory.csv", index=False)
@@ -310,7 +323,59 @@ def main():
     print("Wrote audit/spot_check_worksheet.csv (manual step: open each URL/site and compare)")
 
     # ---------- Step 6: market data ----------
-    print("Step 6 (BVMT market data) SKIPPED -- no market data file in repo. Documented as BLOCKED in report.")
+    # Was hardcoded to "SKIPPED -- no market data file in repo" even after the BVMT
+    # files landed (and were already being inventoried above). Now runs whenever the
+    # Tunindex file is present. The session list it writes is the trading calendar
+    # that news->trading-day alignment depends on.
+    tunindex_path = RAW / BVMT_FILES["bvmt_tunindex"]
+    if not tunindex_path.exists():
+        print("Step 6 (BVMT market data) SKIPPED -- no Tunindex file at "
+              f"{tunindex_path.relative_to(ROOT)}.")
+    else:
+        px = pd.read_csv(tunindex_path, encoding="utf-8-sig")
+        px["date"] = pd.to_datetime(px["date"], errors="coerce")
+        bad_dates = int(px["date"].isna().sum())
+        px = px.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        for c in ("open", "high", "low", "close", "volume"):
+            px[c] = pd.to_numeric(px[c], errors="coerce")
+
+        sessions = px["date"].dt.normalize()
+        # BVMT trades Mon-Fri. Absent weekdays are holidays or scrape gaps -- this
+        # does not distinguish them, it just reports the candidates.
+        weekdays = pd.bdate_range(sessions.min(), sessions.max())
+        missing = weekdays.difference(pd.DatetimeIndex(sessions))
+        stale = int((px["close"].diff() == 0).sum())
+
+        checks = {
+            "rows": len(px),
+            "first_session": sessions.min().date().isoformat(),
+            "last_session": sessions.max().date().isoformat(),
+            "unparseable_dates": bad_dates,
+            "duplicate_sessions": int(sessions.duplicated().sum()),
+            "weekdays_in_range": len(weekdays),
+            "weekdays_absent": len(missing),
+            "weekdays_absent_share": round(len(missing) / len(weekdays), 4) if len(weekdays) else None,
+            "high_lt_low": int((px["high"] < px["low"]).sum()),
+            "close_outside_high_low": int(((px["close"] > px["high"]) | (px["close"] < px["low"])).sum()),
+            "open_outside_high_low": int(((px["open"] > px["high"]) | (px["open"] < px["low"])).sum()),
+            "nonpositive_close": int((px["close"] <= 0).sum()),
+            "zero_volume_sessions": int((px["volume"] == 0).sum()),
+            "stale_close_runs": stale,
+            "null_ohlcv_cells": int(px[["open", "high", "low", "close", "volume"]].isna().sum().sum()),
+        }
+        pd.DataFrame([checks]).to_csv(AUDIT / "market_data_quality.csv", index=False)
+        sessions.dt.date.drop_duplicates().to_frame("session_date").to_csv(
+            AUDIT / "trading_calendar.csv", index=False)
+        pd.DataFrame({"absent_weekday": missing.date}).to_csv(
+            AUDIT / "market_missing_weekdays.csv", index=False)
+        print(f"Wrote audit/market_data_quality.csv, trading_calendar.csv "
+              f"({sessions.nunique()} sessions), market_missing_weekdays.csv")
+        problems = [k for k in ("high_lt_low", "close_outside_high_low",
+                                "open_outside_high_low", "nonpositive_close",
+                                "duplicate_sessions", "unparseable_dates")
+                    if checks[k]]
+        if problems:
+            print("  PRICE SANITY ISSUES: " + ", ".join(f"{k}={checks[k]}" for k in problems))
 
     # ---------- Step 7: duplicates and wire reprints ----------
     def norm(h):

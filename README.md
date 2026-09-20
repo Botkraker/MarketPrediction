@@ -12,7 +12,7 @@ The audience is NLP and quantitative finance students and researchers working on
 ## Features
 
 - Nine headline scrapers (French, Arabic and English outlets) plus a Tunindex OHLC scraper: `scrape_*.py`, `leconomistemaghrebin_Scraper.py`.
-- Reproducible data audit of the raw headline CSVs: `audit/build_audit.py`, findings in [audit/AUDIT_REPORT.md](audit/AUDIT_REPORT.md).
+- Reproducible data audit of the raw headline CSVs, including a **wrong-country provenance check**: `audit/build_audit.py`, findings in [audit/AUDIT_REPORT.md](audit/AUDIT_REPORT.md).
 - Preprocessing pipeline: cleaning and source windows, bilingual relevance filter, headline deduplication, funnel counts.
 - Sentiment gold-set tooling: stratified sampling, local LLM pre-annotation, adjudication, frozen train/validation/evaluation split.
 - Unit tests for normalisation, relevance, dedup, gold set, annotation and split logic.
@@ -34,6 +34,24 @@ flowchart LR
     F --> G[split.py]
     B --> H[audit/build_audit.py]
 ```
+
+### Active sources
+
+Eight of the ten scraped sources feed the pipeline, yielding **42,645 canonical relevant
+headlines** (see `data/curated/funnel.csv`). Two are excluded, both recorded in the funnel with
+`cleaned=0` rather than silently dropped:
+
+| excluded source | reason |
+|---|---|
+| `economist_tunisia_economy` | 100%-overlapping subset of `economist_tunisia_all` (AUDIT_REPORT §4) |
+| `assabah` | **wrong country** — `scrape_assabah.py` targets `assabah.ma` (Morocco), crime section, not Tunisia's `assabah.com.tn`. 11,860 Morocco mentions vs 27 Tunisia; 175 dirham vs 0 dinar. AUDIT_REPORT §6b |
+
+Exclusion is a single key in `config.SOURCE_WINDOWS`. Raw files and scrapers are **retained**,
+never deleted, so the audit stays reproducible.
+
+Because `assabah` was the only Arabic source, the corpus is currently **French-dominant**
+(~97% fr, plus en); the bilingual comparison in H2 is on hold until an Arabic outlet is
+scraped. This is a known limitation, not a finding.
 
 Later stages in the blueprint (language-routed sentiment scoring, daily features aligned to the BVMT calendar, walk-forward models, SHAP) are not implemented here.
 
@@ -124,6 +142,10 @@ python audit/build_audit.py
 ```bash
 python -m pytest preprocessing
 ```
+
+3 of 28 tests currently fail (`test_gold`, `test_adjudicate_from_annotator`,
+`test_llm_annotate`). Pre-existing and unrelated to source exclusion — verified identical
+before and after that change.
 
 ## Contributing
 

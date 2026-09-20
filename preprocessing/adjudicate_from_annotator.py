@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from config import SOURCE_WINDOWS
 from gold import LABELS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +42,12 @@ def create_dataset(
     result = frame.copy()
     result["adjudicated_label"] = labels
     result["annotation_status"] = "adjudicated_from_annotator_1"
+    # in_study gates a row out of training/eval WITHOUT deleting it. Derived from
+    # config.SOURCE_WINDOWS (the single source of truth for source exclusion), so a
+    # source dropped there is dropped here automatically -- no hardcoded id list.
+    # Currently excludes the 68 `assabah` rows: scrape_assabah.py targets assabah.ma
+    # (Morocco), not Tunisia. See AUDIT_REPORT.md section 6b.
+    result["in_study"] = result["source"].isin(SOURCE_WINDOWS)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(output_path, index=False)
@@ -51,6 +58,8 @@ def create_dataset(
         "adjudication_method": "copy annotator_1_label into adjudicated_label",
         "provisional": True,
         "rows_written": len(result),
+        "in_study_counts": result["in_study"].value_counts().to_dict(),
+        "excluded_sources": sorted(set(result.loc[~result["in_study"], "source"])),
         "label_counts": result["adjudicated_label"].value_counts().reindex(LABELS, fill_value=0).astype(int).to_dict(),
     }
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")

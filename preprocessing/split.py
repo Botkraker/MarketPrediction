@@ -11,7 +11,10 @@ from gold import LABELS
 
 ROOT = Path(__file__).resolve().parent.parent
 CURATED = ROOT / "data" / "curated"
-DEFAULT_INPUT = CURATED / "sentiment_gold_annotation.csv"
+# adjudicate_from_annotator.py writes sentiment_gold_annotation1.csv; the
+# upstream sentiment_gold_annotation.csv has an empty adjudicated_label
+# column and fails validate_gold_complete().
+DEFAULT_INPUT = CURATED / "sentiment_gold_annotation1.csv"
 DEFAULT_OUTPUT = CURATED / "sentiment_gold_split.csv"
 DEFAULT_METADATA = CURATED / "sentiment_gold_split_metadata.json"
 LANGUAGES = ("ar", "en", "fr")
@@ -89,6 +92,13 @@ def build_split(
         raise ValueError("validation_fraction leaves no training data")
 
     frame = pd.read_csv(input_path, keep_default_na=False)
+    # Rows flagged out of study (see adjudicate_from_annotator.py) are kept on disk
+    # but never split, trained on or evaluated against.
+    excluded = 0
+    if "in_study" in frame.columns:
+        keep = frame["in_study"].astype(str).str.lower().isin(("true", "1"))
+        excluded = int((~keep).sum())
+        frame = frame[keep].reset_index(drop=True)
     validate_gold_complete(frame)
     frame = frame.copy()
     frame["split"] = _assign_stratified(
@@ -109,6 +119,8 @@ def build_split(
         "input": _display_path(input_path),
         "output": _display_path(output_path),
         "seed": seed,
+        "rows_excluded_not_in_study": excluded,
+        "rows_split": len(result),
         "evaluation_fraction": evaluation_fraction,
         "validation_fraction_of_total": validation_fraction,
         "split_counts": result["split"].value_counts().reindex(SPLITS, fill_value=0).astype(int).to_dict(),

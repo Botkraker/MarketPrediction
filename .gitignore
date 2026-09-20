@@ -10,3 +10,4 @@ audit/audit.duckdb.wal
 __pycache__/
 .pytest_cache/
 /data
+/.claude
