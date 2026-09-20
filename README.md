@@ -19,7 +19,7 @@ The audience is NLP and quantitative finance students and researchers working on
 - Reproducible data audit of the raw headline CSVs, including a **wrong-country provenance check**: `audit/build_audit.py`, findings in [audit/AUDIT_REPORT.md](audit/AUDIT_REPORT.md).
 - Preprocessing pipeline: cleaning and source windows, relevance filter with country negation and listed-issuer matching, template-key near-duplicate deduplication, funnel counts.
 - Sentiment gold-set tooling: stratified sampling, local LLM pre-annotation, adjudication (single-annotator or majority vote), frozen train/validation/evaluation split.
-- Inter-annotator agreement: Fleiss' kappa and weighted Cohen's kappa across any number of LLM annotators (`preprocessing/agreement.py`).
+- Inter-annotator agreement: Fleiss' kappa and weighted Cohen's kappa across any number of LLM annotators (`preprocessing/agreement.py`). A 60-row cross-family pilot (qwen2.5-7b under v1 vs Claude under v2) gives quadratic Cohen **0.659** against nominal Fleiss 0.328 — see [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8f.
 - Trading-calendar alignment and daily feature construction (`preprocessing/features.py`).
 - Price-only walk-forward baseline, the pre-registered bar for H1 (`preprocessing/baseline.py`).
 - Unit tests for normalisation, relevance, dedup, gold set, annotation and split logic.
