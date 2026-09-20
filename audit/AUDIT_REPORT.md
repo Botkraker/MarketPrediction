@@ -636,6 +636,38 @@ outcome-selected and must be declared as such in the paper — or re-run with
 `kind` fixed in advance on data not used for the comparison. `min_train` and
 `refit_every` still need a sensitivity analysis.
 
+### M1 follow-up — the momentum result is NOT robust to the test-window start
+
+`preprocessing/sensitivity.py` grids `min_train` × `refit_every` (16 configurations,
+`sensitivity_results.json`).
+
+**Accuracy is stable; significance is not.**
+
+| min_train | n | accuracy | constant | lift | McNemar |
+|---:|---:|---:|---:|---:|---:|
+| 300 | 2,878 | 0.5716 | 0.5431 | +0.0285 | **0.008** |
+| 500 | 2,678 | 0.5736 | 0.5493 | +0.0243 | **0.028** |
+| 750 | 2,428 | 0.5725 | 0.5540 | +0.0185 | 0.111 |
+| 1000 | 2,178 | 0.5721 | 0.5579 | +0.0142 | 0.249 |
+
+Accuracy varies only over 0.5712–0.5750 across all 16 settings and `refit_every`
+barely matters (≤0.003 within a `min_train` level). But the result is significant in
+**8 of 16 configurations, all at `min_train ≤ 500`**.
+
+The mechanism is in the `constant` column: a later start captures more of the 2025
+bull run, so the always-up baseline climbs 0.5410 → 0.5579 while model accuracy
+holds. The lift is eaten by the drift, not by the model getting worse.
+
+**This qualifies §8c.** "Return autocorrelation is directionally exploitable
+(p = 0.028)" is true at `min_train=500` and false at 750. The honest statement is:
+the momentum edge is real in magnitude and stable in accuracy, but its statistical
+significance depends on where the test window starts, because the constant baseline
+is non-stationary. Report the grid, not the single favourable cell.
+
+This is also why the continuous test matters — OOS R² rises monotonically with
+`min_train` (0.058 → 0.068) even as the sign test loses significance, which is the
+sign test discarding magnitude exactly as §8e/S3 describes.
+
 ### M4 — the gold sample does not match the corpus it scores
 
 `gold.py` takes exactly one row per `source × relevance_tag × year` stratum before
