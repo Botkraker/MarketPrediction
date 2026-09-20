@@ -177,3 +177,57 @@ def test_h2_refuses_when_coverage_windows_barely_overlap():
     f.loc[: len(f) - 50, "sent_mean_lapresse_lag1"] = 0.0    # almost no overlap
     with pytest.raises(SystemExit, match="coverage windows overlap"):
         run_h2(f, ["ilboursa", "lapresse"], min_train=100, refit_every=25)
+
+
+def _paired_forecasts(n=400, treat_better=True, seed=0):
+    rng = np.random.default_rng(seed)
+    actual = rng.normal(0, 0.005, n)
+    good = actual * 0.5 + rng.normal(0, 0.002, n)
+    bad = actual * 0.5 + rng.normal(0, 0.006, n)
+    sess = pd.bdate_range("2014-01-01", periods=n)
+    t_score, b_score = (good, bad) if treat_better else (bad, good)
+    return (pd.DataFrame({"session": sess, "score": t_score, "ret_next": actual}),
+            pd.DataFrame({"session": sess, "score": b_score, "ret_next": actual}))
+
+
+def test_dm_detects_a_better_forecast():
+    from hypothesis_tests import diebold_mariano
+    t, b = _paired_forecasts(treat_better=True)
+    r = diebold_mariano(t, b)
+    assert r["significant_at_05"] and r["treatment_better"]
+    assert r["dm_statistic"] < 0                    # lower loss => negative stat
+    assert r["oos_r2_treatment"] > r["oos_r2_baseline"]
+
+
+def test_dm_detects_a_worse_forecast_the_sign_test_would_miss():
+    """The whole reason DM is here: the sign test needs ~3pp of accuracy to see
+    anything, so it reports 'ns' while the forecast is measurably degrading."""
+    from hypothesis_tests import diebold_mariano
+    t, b = _paired_forecasts(treat_better=False)
+    r = diebold_mariano(t, b)
+    assert r["significant_at_05"] and r["treatment_better"] is False
+    assert r["dm_statistic"] > 0
+    assert r["oos_r2_treatment"] < r["oos_r2_baseline"]
+
+
+def test_dm_refuses_unaligned_arms_and_tiny_samples():
+    from hypothesis_tests import diebold_mariano
+    t, b = _paired_forecasts(n=20)
+    assert "skipped" in diebold_mariano(t, b)
+    t, b = _paired_forecasts()
+    b = b.assign(session=pd.bdate_range("2020-01-01", periods=len(b)))
+    with pytest.raises(ValueError, match="not aligned"):
+        diebold_mariano(t, b)
+
+
+def test_interpretation_reports_degradation_not_a_bare_null():
+    """A significant DM in the harmful direction must not be summarised as
+    'H1 NOT SUPPORTED' -- that hides a real finding behind an underpowered null."""
+    from hypothesis_tests import ARMS, _interpret
+    worse = {"significant_at_05": True, "treatment_better": False}
+    results = {"baseline": {"accuracy": 0.57, "n_predictions": 2678}}
+    for arm in ARMS:
+        results[arm] = {"accuracy": 0.57, "vs_baseline": {"significant_at_05": False},
+                        "vs_baseline_continuous": worse}
+    verdict = _interpret(results)
+    assert "REJECTED" in verdict and "WORSE" in verdict
