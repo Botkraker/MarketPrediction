@@ -119,3 +119,21 @@ SOURCE_LANG = {
 }
 
 CURATED_DIR_NAME = "curated"
+
+
+# --- Price-report headlines: the momentum-laundering confound -----------------
+# ~10% of relevant headlines (4,244 of 42,645) report the index's own move:
+# "Le Tunindex termine sur une note stable (+0,08%)". Their sentiment is a
+# restatement of ret_D, so a sentiment feature built on them re-encodes lagged
+# returns and can appear to "predict" ret_D+1 purely via the 0.263 return
+# autocorrelation -- momentum laundered through a text channel.
+#
+# They are NOT dropped: a market-report headline is real news, and excluding it
+# by default would be an unjustified editorial choice. They are FLAGGED so H1 can
+# be reported three ways: all headlines, excluding price reports, and price
+# reports only (a placebo -- if sentiment only works there, it is momentum).
+# Concentrated in ilboursa (11.9%), kapitalis (11.2%), leconomistmaghrebin (9.3%).
+PRICE_REPORT_PATTERN = (
+    r"tunindex|bourse de tunis|cl\u00f4tur|cloture|s\u00e9ance du|seance du|"
+    r"en hausse de|en baisse de|points"
+)

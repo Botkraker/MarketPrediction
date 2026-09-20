@@ -68,3 +68,50 @@ def test_annotate_file_writes_only_its_own_annotator(tmp_path, monkeypatch):
     # annotator 2 is written into its own columns, model recorded
     assert result["annotator_2_label"].tolist() == ["neutral", "neutral"]
     assert result["annotator_2_model"].tolist() == ["other-model", "other-model"]
+
+
+def test_v1_prompt_is_frozen_for_reproducibility():
+    """The original 3,000 labels were produced with v1. Editing it would silently
+    invalidate their provenance."""
+    from llm_annotate import PROMPTS
+    assert PROMPTS["v1"] == (
+        "You annotate news headline sentiment for the Tunisian economy. "
+        "Return ONLY one complete valid JSON object with exactly two fields: label and reason. "
+        "label must be one of ['very_negative', 'negative', 'neutral', 'positive', "
+        "'very_positive']. reason must be one short sentence of at most 15 words. "
+        "Do not use Markdown, prefixes, suffixes, or extra quotes.")
+
+
+def test_v2_prompt_fixes_the_documented_v1_failures():
+    from llm_annotate import PROMPTS
+    v2 = PROMPTS["v2"]
+    # defines the construct as market impact, not tone
+    assert "MARKET" in v2 and "optimistic" in v2
+    # makes neutral the default rather than a last resort
+    assert "NEUTRAL IS THE DEFAULT" in v2
+    # names the exact traps found in the v1 labels
+    for trap in ("en cours d'élaboration", "inchangé", "dépassent", "Météo"):
+        assert trap in v2
+    # every label is defined, not just listed
+    for label in ("very_negative", "negative", "neutral", "positive", "very_positive"):
+        assert f"- {label}:" in v2
+
+
+def test_unknown_prompt_version_is_rejected():
+    import llm_annotate
+    with pytest.raises(ValueError, match="Unknown prompt_version"):
+        llm_annotate.annotate_headline("x", "fr", "tunisia_econ", prompt_version="v9")
+
+
+def test_prompt_version_is_recorded_per_row(tmp_path, monkeypatch):
+    import llm_annotate
+    frame = pd.DataFrame({
+        "headline_clean": ["Le dinar recule"], "lang": ["fr"],
+        "relevance_tag": ["tunisia_econ"],
+    })
+    path = tmp_path / "g.csv"
+    frame.to_csv(path, index=False)
+    monkeypatch.setattr(llm_annotate, "annotate_headline",
+                        lambda *a, **k: ("negative", "currency weakness"))
+    out = llm_annotate.annotate_file(path, annotator=2, prompt_version="v2")
+    assert out["annotator_2_prompt"].tolist() == ["v2"]
