@@ -30,7 +30,9 @@ def create_dataset(
 ) -> pd.DataFrame:
     """Copy annotator 1 labels into adjudicated_label without changing input."""
     frame = pd.read_csv(input_path, keep_default_na=False)
-    required = {"annotator_1_label", "adjudicated_label", "annotation_status"}
+    # "source" is required because in_study is derived from it (see below).
+    required = {"annotator_1_label", "adjudicated_label", "annotation_status",
+                "source"}
     missing = required - set(frame.columns)
     if missing:
         raise ValueError(f"Input is missing required columns: {sorted(missing)}")

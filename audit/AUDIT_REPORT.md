@@ -1,8 +1,7 @@
 # Data Audit Report — raw-v1
 
 **Revision 2026-09-20:** §6b added (wrong-country check — `assabah` is Moroccan, excluded);
-§8 and §9 corrected (market data is present, Step 6 is blocked by a hardcoded skip, not by
-missing data). Everything else is the original raw-v1 text.
+§8 and §9 corrected, then §8b added once step 6 was actually implemented and run. Everything else is the original raw-v1 text.
 
 Scope: the 10 scraper outputs currently in `data/raw/`. Produced by `audit/build_audit.py`
 (deterministic, re-runnable; outputs live alongside this report in `audit/`). Nothing in
@@ -244,6 +243,51 @@ here.
   with the usable windows in §2's table.
 - **Tag**: after this report and its outputs are committed, tag the snapshot `raw-v1` per the
   plan (done as part of this same commit — see the commit message for the tag).
+
+## 8b. Market data — step 6, now computed (added 2026-09-20)
+
+Step 6 previously printed "SKIPPED — no market data file in repo" unconditionally, long after
+the BVMT files landed. Fixed: it now runs whenever `bvmt/tunindex_2010_today.csv` is present.
+Outputs: `market_data_quality.csv`, `trading_calendar.csv`, `market_missing_weekdays.csv`.
+
+| check | value | reading |
+|---|---:|---|
+| sessions | 4,167 | 2010-01-04 → 2026-09-16 |
+| unparseable dates | 0 | clean |
+| duplicate sessions | 0 | clean |
+| weekdays absent in range | 191 / 4,358 (4.4%) | ≈11/yr — consistent with Tunisian public holidays, **not scrape gaps** |
+| high < low | 0 | clean |
+| close outside [low, high] | 0 | clean |
+| **open outside [low, high]** | **69** | **see below** |
+| non-positive close | 0 | clean |
+| zero-volume sessions | 56 | flagged, not investigated |
+| stale close runs | 20 | consecutive identical closes |
+| null OHLCV cells | 0 | clean |
+
+### The `open` column is not an opening price
+
+**1,384 of 4,167 rows (33.2%) have `open` exactly equal to the previous session's `close`**,
+and 68 of the 69 range violations are exactly those rows. Example:
+
+```
+2010-01-04  open 4291.72  high 4320.55  low 4295.02  close 4320.31   <- open < low
+2010-01-05  open 4320.31  ...                                        <- = 2010-01-04 close
+2010-01-06  open 4404.72  ...                        close 4404.72   <- = 2010-01-05 close
+```
+
+The 69 out-of-range cases are only the detectable tip; the other ~1,315 carried-forward opens
+fall inside `[low, high]` by coincidence and are invisible to a range check.
+
+**Consequence for feature engineering:** an intraday return computed as `(close - open)/open`
+silently becomes a close-to-close return for a third of sessions — two different quantities in
+one column. **Use close-to-close returns.** Do not use `open` as a price feature without
+establishing its provenance in the upstream source.
+
+### Trading calendar
+
+`trading_calendar.csv` is the 4,167-session list. News→trading-day alignment must map each
+headline to the next session *in this file*, not to the next weekday — 191 weekdays are not
+sessions. Headlines on non-session days accumulate to the following session.
 
 ## 9. Explicit blocked/skipped items (for transparency)
 

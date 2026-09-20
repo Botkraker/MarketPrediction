@@ -7,6 +7,7 @@ from adjudicate_from_annotator import create_dataset
 def test_create_dataset_copies_annotator_one(tmp_path):
     source = pd.DataFrame(
         {
+            "source": ["ilboursa", "kapitalis"],
             "annotator_1_label": ["negative", "positive"],
             "adjudicated_label": ["", ""],
             "annotation_status": ["llm_annotated", "llm_annotated"],
@@ -20,12 +21,13 @@ def test_create_dataset_copies_annotator_one(tmp_path):
 
     assert result["adjudicated_label"].tolist() == ["negative", "positive"]
     assert set(result["annotation_status"]) == {"adjudicated_from_annotator_1"}
-    assert pd.read_csv(input_path)["adjudicated_label"].tolist() == ["", ""]
+    assert pd.read_csv(input_path, keep_default_na=False)["adjudicated_label"].tolist() == ["", ""]
 
 
 def test_create_dataset_rejects_blank_annotation_one(tmp_path):
     source = pd.DataFrame(
         {
+            "source": ["ilboursa"],
             "annotator_1_label": [""],
             "adjudicated_label": [""],
             "annotation_status": ["llm_annotated"],
