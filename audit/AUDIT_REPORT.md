@@ -788,7 +788,44 @@ Essentially free, because the model refits every 20 sessions. **That is a result
 not a non-finding:** the momentum edge is not an artifact of training on sessions
 adjacent to the target.
 
-### NOT fixed: §5.2 — the F1 rung is missing entirely
+### §5.2 F1 — the energy channel is MEASURED and immaterial (2026-09-20)
+
+Before building F1, the premise was tested. Brent daily spot (EIA series RBRTE,
+9,087 observations 1987-2026, saved to `data/raw/macro/brent_eia_daily.csv`) matched
+to 97.5% of trading sessions:
+
+| relationship | r | |
+|---|---:|---|
+| Brent move vs same-session Tunindex return | +0.0021 | ns |
+| Brent move vs next-session return | +0.0203 | ns |
+| Brent move vs \|return\| | +0.0070 | ns |
+| R² of Brent alone on next return | **0.00041** | vs 0.06910 for `ret_lag0` — 168× weaker |
+
+Consistent with the `global_linked` news evidence: international headline counts show
+no relationship with Tunindex returns or volatility (r ≈ +0.02, ns) while domestic
+counts do (r = +0.095 for volatility, p < 0.001). Tunisia's market responds to
+domestic news flow and not to international flow — expected for a closed, illiquid
+frontier market driven by episodic block trades (§8c).
+
+**Disposition: a measured deviation, not a gap.** H1 is reported against F0, and
+§5.2's energy control is documented as tested and immaterial for this market. That
+is defensible; an unexplained omission would not be.
+
+**Also a power argument.** The design is underpowered at MDE 3.06pp (§8e/S3). Adding
+controls with R² = 0.0004 spends degrees of freedom and makes a true effect *harder*
+to detect. Conforming to F1 mechanically would have hurt the study.
+
+### Still untested in F1
+
+Brent is one of three F1 components. **EUR/TND and European index returns were not
+tested** — FRED's CSV endpoint timed out repeatedly, Yahoo rate-limits unauthenticated
+requests, Stooq serves a JavaScript challenge, and the ECB does not publish a TND
+reference rate. The EU takes roughly 70% of Tunisian exports and tourism, so the
+demand channel is the more plausible of the two remaining and should be tested before
+F1 is closed out. BCT (`bct.gov.tn`) responds and is the authoritative source for
+both the dinar and the policy rate.
+
+### Original text: the F1 rung is missing entirely
 
 The feature ladder is F0 (price) → **F1 (+ macro/FX: TND rates, Brent, European
 index returns)** → F2 (+ local sentiment) → F3 (+ international sentiment). There is
