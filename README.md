@@ -1,11 +1,15 @@
 # Tunindex Sentiment Pipeline
 
-Data collection and preprocessing for testing whether French and Arabic news sentiment improves next-session prediction of the Tunisian stock index (Tunindex, BVMT) beyond a price-only baseline.
+Data collection, preprocessing and a pre-registered hypothesis harness for testing whether **French-language** news sentiment improves next-session prediction of the Tunisian stock index (Tunindex, BVMT) beyond a price-only baseline.
+
+> **The corpus contains no Arabic.** The only Arabic source was Assabah, excluded once it was found to be the Moroccan paper (`assabah.ma`, crime section) rather than the Tunisian one. Relevant canonical rows: **41,597 fr / 1,048 en / 0 ar**. H2's bilingual framing is on hold until an Arabic outlet is scraped. Note also that `lang` is assigned per source, not detected per headline, so any "by language" figure is really a by-source-group figure.
 
 The design follows the architecture blueprint (v1.1, September 2026), which adapts the FinBERT + ensemble ML + SHAP approach of Ibrahim, Khan & Kaplan (2025, *Borsa Istanbul Review* 25) to a bilingual, low-liquidity frontier market. The blueprint frames two hypotheses:
 
 - **H1:** sentiment features add predictive power over lagged price, volume and macro controls under walk-forward validation.
 - **H2:** the source ranking found for Turkiye (international outlets dominate) does not automatically transfer to Tunisia.
+
+**Neither hypothesis has been tested.** The harness runs end to end, but on labels from a single 7B annotator under a prompt that did not define the task, and the design is **underpowered** (minimum detectable effect 3.06pp against published effects of 1-2pp). A null result from it is *inconclusive*, not evidence of absence.
 
 The audience is NLP and quantitative finance students and researchers working on frontier-market text. Only the data and preprocessing stages exist in this repo. No sentiment model, forecasting model or result is included yet, and none is claimed.
 
@@ -13,7 +17,7 @@ The audience is NLP and quantitative finance students and researchers working on
 
 - Nine headline scrapers (French, Arabic and English outlets) plus a Tunindex OHLC scraper: `scrape_*.py`, `leconomistemaghrebin_Scraper.py`.
 - Reproducible data audit of the raw headline CSVs, including a **wrong-country provenance check**: `audit/build_audit.py`, findings in [audit/AUDIT_REPORT.md](audit/AUDIT_REPORT.md).
-- Preprocessing pipeline: cleaning and source windows, bilingual relevance filter, headline deduplication, funnel counts.
+- Preprocessing pipeline: cleaning and source windows, relevance filter with country negation and listed-issuer matching, template-key near-duplicate deduplication, funnel counts.
 - Sentiment gold-set tooling: stratified sampling, local LLM pre-annotation, adjudication (single-annotator or majority vote), frozen train/validation/evaluation split.
 - Inter-annotator agreement: Fleiss' kappa and weighted Cohen's kappa across any number of LLM annotators (`preprocessing/agreement.py`).
 - Trading-calendar alignment and daily feature construction (`preprocessing/features.py`).
@@ -65,11 +69,15 @@ Daily feature construction and the price-only walk-forward baseline **are**
 implemented. The sentiment model itself is not: no classifier is trained, the
 42,645-headline corpus is unscored, and neither H1 nor H2 has been tested.
 
-**The pre-registered H1 bar.** Over 2,678 walk-forward predictions from 2014,
-"always predict up" scores **0.5493**. The best price-only model reaches 0.5564
-(McNemar p = 0.418 — not significant), and adding news *counts* makes it slightly
-worse. This bar was fixed before any sentiment score existed. Details and the
-supporting data characteristics are in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8c.
+**The H1 bar.** Over 2,678 walk-forward predictions from 2014, "always predict up"
+scores **0.5493**; the best price-only model reaches **0.5736** (McNemar p = 0.028,
+significant). An earlier revision reported 0.5564/p=0.418 — that was a lag-offset
+bug which excluded the most recent available return from every feature set. See
+[AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sections 8c and 8e.
+
+**The design is underpowered.** MDE at 80% power is **3.06pp**; published daily
+news-sentiment effects on index direction are 1-2pp. `hypothesis_tests.py` reports
+this alongside every result.
 
 Two constraints that follow from the data, both enforced in code:
 
@@ -106,7 +114,26 @@ Both documented with evidence in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sectio
    (`config.PRICE_REPORT_PATTERN`); H1 must be reported with them, without them, and
    on them alone as a placebo.
 
-Still not implemented: language-routed sentiment scoring, the H1/H2 tests, SHAP.
+### Methodological controls
+
+- **Four H1 arms**, not one: `all`, `ex_price` (price reports removed), `placebo`
+  (price reports only), and `orthogonal` (sentiment residualised on `ret_lag0`,
+  `ret_lag1`, `log_headlines_lag0`). The placebo is necessary but not sufficient —
+  momentum also reaches the sentiment channel through sector commentary the regex
+  never matches — which is what the orthogonalised arm covers.
+- **Holm-Bonferroni** across the arms. `baseline.py`'s 8 configurations are
+  exploratory and are labelled as such.
+- **Leakage-free scoring.** `score_corpus.py --mode expanding` (the default) refits
+  the classifier on gold rows dated strictly before each block. The old single-fit
+  mode leaked 2026 labels into 2014 scores and is retained only as `--mode static`
+  for quantifying the difference. Cost: ~20% of headlines have no prior labels and
+  are left **unscored rather than imputed**.
+- **Missing-day convention.** 59% of sessions have no price-report headline. Arms
+  carry an explicit `has_sent_*` indicator alongside a 0-fill, so "no headlines" is
+  distinguishable from "neutral headlines" and the paired test stays aligned.
+
+Still not implemented: the sentiment model proper (only a TF-IDF baseline exists),
+SHAP, and any reportable H1/H2 result.
 
 ## Prerequisites
 
@@ -195,9 +222,18 @@ rather than prompt wording.
 Build daily features and run the price-only baseline:
 
 ```bash
+python preprocessing/score_corpus.py        # leakage-free expanding-window scoring
 python preprocessing/features.py --start 2014-01-01
 python preprocessing/baseline.py            # price-only bar for H1
 python preprocessing/sentiment_baseline.py  # TF-IDF bar for the sentiment model
+python preprocessing/hypothesis_tests.py    # H1, four arms, Holm-corrected
+```
+
+Validate the relevance filter (the worksheet is generated; hand labels are not):
+
+```bash
+python preprocessing/relevance_validation.py worksheet -n 300
+python preprocessing/relevance_validation.py report
 ```
 
 Rebuild the audit outputs in `audit/`:
@@ -227,7 +263,7 @@ python audit/build_audit.py
 python -m pytest preprocessing
 ```
 
-60 tests, all passing.
+104 tests, all passing.
 
 ## Contributing
 

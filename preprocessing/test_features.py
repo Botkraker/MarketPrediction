@@ -71,10 +71,16 @@ def test_price_report_headlines_are_flagged_not_dropped():
         "Bourse de Tunis : Le Tunindex termine sur une note stable (+0,08%)",
         "Le Tunindex a cloture la seance du 20 fevrier en hausse de 0,5%",
         "Hydrogene vert : des entreprises allemandes attendues en Tunisie",
+        # A RATE DECISION IS NOT A PRICE REPORT. The v1 pattern matched the bare
+        # token "points" and flagged 96 of these, exiling the most market-relevant
+        # headlines in the corpus from the treatment arm into the placebo. An
+        # earlier version of THIS TEST asserted True here and certified the bug.
         "La BCT releve son taux directeur de 75 points de base",
+        # merely naming the exchange is not a price report either
+        "Bilel Sahnoun nomme nouveau directeur general de la Bourse de Tunis",
     ])
     flagged = headlines.str.contains(PRICE_REPORT_PATTERN, case=False, regex=True)
-    assert flagged.tolist() == [True, True, False, True]
+    assert flagged.tolist() == [True, True, False, False, False]
 
 
 def test_feature_table_separates_price_reports_from_other_news():
@@ -88,3 +94,48 @@ def test_feature_table_separates_price_reports_from_other_news():
     assert (frame.n_price_reports + frame.n_non_price == frame.n_headlines).all()
     assert (frame.n_non_price >= 0).all()
     assert frame.price_report_share.between(0, 1).all()
+
+
+def test_most_recent_available_return_is_exposed_as_ret_lag0():
+    """Regression guard for the lag-offset bug.
+
+    Row i is session i; the target ret_next[i] is session i+1, predicted after
+    session i has closed. ret[i] is therefore AVAILABLE and is the strongest
+    single predictor. Defining lags from the row instead of from the target
+    silently dropped it and turned a significant baseline (0.5736, p=0.028) into
+    a null (0.5564, p=0.418).
+    """
+    import pandas as pd
+    from pathlib import Path
+    from baseline import FEATURE_SETS
+
+    frame = pd.read_parquet(Path(__file__).resolve().parent.parent
+                            / "data" / "curated" / "daily_features.parquet")
+    assert "ret_lag0" in frame.columns
+    assert frame["ret_lag0"].equals(frame["ret"])          # lag 0 == the row's own return
+    # Lags are computed before the --start filter, so row 0's lag correctly comes
+    # from the last session BEFORE the window. Compare from row 1 onward.
+    assert frame["ret_lag1"].iloc[1:].equals(frame["ret"].shift(1).iloc[1:])
+    assert frame["ret_next"].iloc[:-1].equals(frame["ret"].shift(-1).iloc[:-1])
+    assert pd.notna(frame["ret_lag1"].iloc[0])   # carried in from pre-window
+
+    # every momentum feature set must include the most recent available return
+    for name, feats in FEATURE_SETS.items():
+        assert "ret_lag0" in feats, f"{name} omits the last closed session's return"
+
+    # and it must actually be the more informative one
+    d = frame[["ret_lag0", "ret_lag1", "ret_next"]].dropna()
+    assert abs(d.ret_lag0.corr(d.ret_next)) > abs(d.ret_lag1.corr(d.ret_next))
+
+
+def test_ret_lag0_is_not_look_ahead():
+    """ret_lag0[i] must depend only on closes up to session i."""
+    import numpy as np
+    import pandas as pd
+    from features import load_prices
+
+    px = load_prices()
+    expected = px["close"].pct_change()
+    assert np.allclose(px["ret"].dropna(), expected.dropna())
+    # ret[i] uses close[i] and close[i-1] -- never close[i+1]
+    assert px["ret"].iloc[0] != px["ret"].iloc[0] or pd.isna(px["ret"].iloc[0])

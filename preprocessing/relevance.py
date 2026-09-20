@@ -15,8 +15,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import KEYWORDS_GLOBAL_LINKED, KEYWORDS_TUNISIA_ECON, SOURCE_LANG
+from config import (KEYWORDS_GLOBAL_LINKED, KEYWORDS_ISSUERS,
+                    KEYWORDS_TUNISIA_ECON, SOURCE_LANG)
 from normalize import arabic_normalize_for_matching
+from relevance_geo import is_foreign_context
 
 CURATED = Path(__file__).resolve().parent.parent / "data" / "curated"
 
@@ -38,8 +40,26 @@ def tag_row(headline_clean: str, lang: str) -> tuple[str, str | None]:
     econ_kws = KEYWORDS_TUNISIA_ECON.get(lang, [])
     econ_kws = [arabic_normalize_for_matching(k) if lang == "ar" else k.lower() for k in econ_kws]
     hit = _match(text_norm, econ_kws)
-    if hit:
+    # Country negation (audit finding S6): most KEYWORDS_TUNISIA_ECON entries
+    # are bare generic economics terms, so a foreign-country headline matches
+    # them too ("L'Algerie realise une croissance de..."). A headline naming a
+    # foreign country and no Tunisian entity cannot be tunisia_econ; it falls
+    # through to global_linked/other. Headlines carrying a Tunisia-specific
+    # term (tunisie/dinar/bvmt/tunindex/bct/bourse de tunis/تونس/...) are never
+    # blocked, so the Tunisia-specific keywords behave exactly as before.
+    if hit and not is_foreign_context(headline_clean, lang):
         return "tunisia_econ", hit
+
+    # Listed-issuer names (audit finding S6, false-negative side). The keyword
+    # lists are TOPIC words, so a headline about a BVMT constituent carries none
+    # of them -- 7,215 rows naming an issuer were being discarded as `other`
+    # ("Le benefice net de Land'Or bondit de 80 %"). Issuer names are matched on
+    # the raw lowercased text in any language, since company names are not
+    # translated, and country negation still applies so a foreign story
+    # mentioning a Tunisian issuer is not swept in.
+    issuer_hit = _match(headline_clean.lower(), KEYWORDS_ISSUERS)
+    if issuer_hit and not is_foreign_context(headline_clean, lang):
+        return "tunisia_econ", issuer_hit
 
     global_kws = KEYWORDS_GLOBAL_LINKED.get(lang, [])
     global_kws = [arabic_normalize_for_matching(k) if lang == "ar" else k.lower() for k in global_kws]
