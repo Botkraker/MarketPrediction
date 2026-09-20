@@ -47,8 +47,8 @@ flowchart LR
 
 ### Active sources
 
-Eight of the ten scraped sources feed the pipeline, yielding **42,645 canonical relevant
-headlines** (see `data/curated/funnel.csv`). Two are excluded, both recorded in the funnel with
+Eight of the ten scraped sources feed the pipeline, yielding **46,013 canonical
+relevant headlines** from 47,784 relevant rows (see `data/curated/funnel.csv`). Two are excluded, both recorded in the funnel with
 `cleaned=0` rather than silently dropped:
 
 | excluded source | reason |
@@ -65,9 +65,15 @@ scraped. This is a known limitation, not a finding.
 
 ### Modelling status
 
-Daily feature construction and the price-only walk-forward baseline **are**
-implemented. The sentiment model itself is not: no classifier is trained, the
-42,645-headline corpus is unscored, and neither H1 nor H2 has been tested.
+Daily feature construction, the price-only walk-forward baseline and the H1/H2
+harness **are** implemented and run end to end. What is missing is a trustworthy
+sentiment signal: the only classifier is a TF-IDF baseline trained on labels from a
+single 7B annotator under a prompt that did not define the task, so **neither H1 nor
+H2 has a reportable result**.
+
+The corpus is scored leakage-free by `score_corpus.py --mode expanding`: 36,795 of
+46,013 headlines carry a score, and the remaining 9,218 are left **unscored rather
+than imputed** because no gold labels predate them.
 
 **The H1 bar.** Over 2,678 walk-forward predictions from 2014, "always predict up"
 scores **0.5493**; the best price-only model reaches **0.5736** (McNemar p = 0.028,
@@ -134,6 +140,12 @@ Both documented with evidence in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sectio
 
 Still not implemented: the sentiment model proper (only a TF-IDF baseline exists),
 SHAP, and any reportable H1/H2 result.
+
+The harness is committed and tagged **`prereg-h1-v1`**, so the pre-registration claim
+rests on git history rather than a file timestamp. One caveat stated plainly: the
+default estimator (`kind="regress"`) was chosen *after* comparing it against
+classification on the same data H1 is tested on, so that choice is outcome-selected
+and is declared as such rather than presented as pre-specified.
 
 ## Prerequisites
 

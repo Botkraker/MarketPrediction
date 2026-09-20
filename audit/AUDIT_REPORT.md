@@ -559,8 +559,9 @@ corpus. `config.KEYWORDS_ISSUERS` now loads the 79 issuer names (≥4 chars) fro
 constituents. Short tickers (AB, BT, CC, SAH) are excluded — they match inside
 ordinary words. Country negation still applies on top.
 
-Net corpus effect: canonical **42,645 → 46,228** (−789 wrong-country, +4,372 issuer
-recoveries).
+Net corpus effect: relevant 43,184 → **47,784**; canonical **42,645 → 46,013**
+(−789 wrong-country, ~+4,400 issuer recoveries, −1,185 absorbed by the template-key
+dedup in M5).
 
 Still unvalidated: 3,186 rows (8.25%) match a generic keyword and name no country at
 all. Only hand labels settle those. `preprocessing/relevance_validation.py worksheet`
@@ -619,16 +620,21 @@ against a 60k-feature char-ngram space over 5 ordinal classes, held-out accuracy
 correctness guard — and as a prerequisite for any gold-set expansion, where
 collisions grow roughly quadratically — not as the explanation.
 
-### M1 — "pre-registration" is not verifiable, and one choice was outcome-selected
+### M1 — pre-registration: timestamp fixed, estimator choice still tainted
 
 `hypothesis_tests.py` claims in its docstring to have been written before any
-sentiment score existed. That is backed only by a file mtime — no commit tag, no
-external registration. Worse, `kind="regress"` is the default *because* §8c had
+sentiment score existed. **Partly resolved 2026-09-20:** the harness is committed at
+`7ed9c0c` and tagged **`prereg-h1-v1`**, so the claim now rests on git history rather
+than a file mtime. That is verifiable by an editor.
+
+What is **not** resolved: Worse, `kind="regress"` is the default *because* §8c had
 already compared regress against classify across 8 configurations on the same data
 H1 is tested on. **The estimator was selected on the outcome.** `min_train=500` and
 `refit_every=20` are likewise unjustified free parameters that set the test window.
-Disposition: commit and tag before generating any result intended for publication,
-and sensitivity-test both parameters.
+Disposition: the tag fixes the timestamp, but `kind="regress"` remains
+outcome-selected and must be declared as such in the paper — or re-run with
+`kind` fixed in advance on data not used for the comparison. `min_train` and
+`refit_every` still need a sensitivity analysis.
 
 ### M4 — the gold sample does not match the corpus it scores
 
