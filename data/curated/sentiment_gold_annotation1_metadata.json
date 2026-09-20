@@ -1,0 +1,15 @@
+{
+  "input": "data\\curated\\sentiment_gold_annotation.csv",
+  "output": "data\\curated\\sentiment_gold_annotation1.csv",
+  "labels_source": "annotator_1_label",
+  "adjudication_method": "copy annotator_1_label into adjudicated_label",
+  "provisional": true,
+  "rows_written": 3000,
+  "label_counts": {
+    "very_negative": 97,
+    "negative": 699,
+    "neutral": 291,
+    "positive": 1735,
+    "very_positive": 178
+  }
+}

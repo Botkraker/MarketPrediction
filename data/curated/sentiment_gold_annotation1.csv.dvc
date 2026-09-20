@@ -1,0 +1,5 @@
+outs:
+- md5: 0cbe7b8d1cbe3b058c45a0793b807f9a
+  size: 885028
+  hash: md5
+  path: sentiment_gold_annotation1.csv
