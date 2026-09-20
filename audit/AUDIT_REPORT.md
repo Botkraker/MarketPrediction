@@ -289,6 +289,128 @@ establishing its provenance in the upstream source.
 headline to the next session *in this file*, not to the next weekday — 191 weekdays are not
 sessions. Headlines on non-session days accumulate to the following session.
 
+## 8c. Corpus/market characteristics that constrain modelling (added 2026-09-20)
+
+Measured while building `preprocessing/features.py` and `preprocessing/baseline.py`.
+These are data properties, not results, but each one forecloses a modelling choice.
+
+### Usable study window starts 2014, not 2010
+
+Median relevant headlines per covered day, by year: **1** for 2010-2013, then 6-15
+from 2014 onward. A daily news feature built on one headline per day is noise.
+`features.py` therefore defaults to `--start 2014-01-01`: 3,179 sessions,
+**100% of them with at least one headline**, median 12/session.
+
+Separately, the 2,932-row sentiment gold set spans 2,058 distinct days at a median
+of **1 labelled headline per day**. It is stratified for classifier training
+(source x language x relevance x year), NOT for time-series construction, and must
+not be used to build daily sentiment. Daily features require scoring the full
+42,645-headline corpus with a trained model.
+
+### News volume does not move trading volume
+
+| relationship | r | verdict |
+|---|---:|---|
+| news volume vs \|return\| | +0.095 *** | as expected |
+| news volume vs high-low range | +0.140 *** | as expected |
+| **news volume vs trading volume** | **+0.018 ns** | **contradicts the developed-market norm** |
+
+Checked and not explained by: the 55 zero-volume sessions (excluding them gives
+r=+0.007), or by source mix (all eight sources are individually flat against
+volume, including `ilboursa`, the dedicated financial outlet). BVMT volume has
+skew **12.5**, with the top 1% of sessions carrying 9.3% of all volume — it is
+driven by episodic block trades, not by news-reading flow. **Volume-based
+features are not advisable on this market.**
+
+### Return autocorrelation is real but not directionally exploitable
+
+`corr(ret_t-1, ret_t) = +0.263` and `corr(|ret|_t-1, |ret|_t) = +0.387` — both
+far above a liquid-market norm of ~0, and consistent with thin trading and partial
+adjustment (only 20 stale closes, so not an artifact).
+
+It does **not** translate into directional predictability. Walk-forward
+out-of-sample R^2 on `ret_lag1..3` is **+0.0068** (in-sample +0.0135), and the
+best directional accuracy is 0.5564 against an always-up constant of 0.5493 —
+McNemar **p = 0.418**. Autocorrelation on the return *level* is swamped by noise
+once reduced to a *sign*.
+
+### The pre-registered bar for H1
+
+Always-up constant: **0.5493** over 2,678 walk-forward predictions. No price-only
+feature set beats it significantly. Established before any sentiment score exists,
+so the H1 comparison is against a bar fixed in advance.
+
+Two incidental findings: regressing the return and taking its sign beats
+classifying direction in every feature set (classify ~0.545 vs regress ~0.556),
+because a logistic fit on a drift-dominated binary label collapses to "always up"
+(it predicted up 77-92% of the time). And adding news *counts* to the price
+features makes accuracy slightly worse (0.5538 vs 0.5564) — counting headlines
+without reading them carries no signal, which is the control H1 needs.
+
+## 8d. Two threats to the validity of any sentiment result (added 2026-09-20)
+
+Both found by inspecting the LLM annotations and the corpus. Neither is a data-quality
+defect in the ordinary sense; both would invalidate an H1 claim if left uncontrolled.
+
+### 1. The annotation prompt does not define the task (construct validity)
+
+The system prompt in `llm_annotate.py` is, in full: a one-line role statement plus
+four lines of JSON formatting rules. It never defines what `positive` means, never
+says when to use `neutral`, never anchors sentiment to *market impact* rather than
+tone, never explains the `relevance_tag` it passes in, and gives no examples to
+anchor a five-point ordinal scale.
+
+The resulting labels measure vocabulary, not expected market effect:
+
+| headline | label | model's stated reason |
+|---|---|---|
+| "un code de l'environnement est **en cours d'élaboration**" | positive | "development of environmental regulations suggests progress" |
+| "Les billets et monnaies en circulation **dépassent** 24 milliards de dinars" | positive | restates the headline |
+| "Quatre priorités politiques clés en matière d'investissement" | positive | "highlights economic focus" |
+
+A draft regulation scores positive; currency in circulation rising scores positive
+(it is neutral at best, inflationary at worst). `neutral` is used almost only for
+off-topic items (including a **weather forecast**), questions, and literal
+"unchanged" reports — i.e. it means "no sentiment word found", not "market-neutral".
+
+Distribution: positive 58.8%, neutral 9.4%. For financial headlines neutral should
+dominate. **Consequence:** a null H1 would be uninterpretable — indistinguishable
+from "we measured the wrong construct". Fix the prompt before re-annotating.
+
+### 2. Price-report headlines launder momentum into the sentiment channel
+
+**4,244 of 42,645 relevant headlines (10.0%)** report the index's own move:
+"Le Tunindex termine sur une note stable (+0,08%)". Concentrated in the three
+largest sources — ilboursa 11.9%, kapitalis 11.2%, leconomistmaghrebin 9.3%.
+
+Measured on the 2,356 such headlines carrying an explicit direction word:
+
+| check | r | sign agreement |
+|---|---:|---:|
+| direction word vs **that day's** return | **+0.519** (p=2e-110) | **84.3%** |
+| same feature vs the **next session's** return | +0.133 (p=5e-08) | 56.4% |
+
+These headlines *are* the return, in words. Mapped forward one session as a
+feature they still predict at r=0.133 — because return autocorrelation is +0.263
+(section 8c). For scale:
+
+| predictor | directional accuracy |
+|---|---:|
+| always-up constant | 0.5493 |
+| best price-only model | 0.5564 |
+| **yesterday's price report read as text** | **0.5640** |
+
+A feature with **no news content** beats the momentum model. An uncontrolled
+sentiment model could therefore report "sentiment improves prediction" while
+measuring only autocorrelation.
+
+**Control, not removal.** A market report is real news; dropping it by default
+would be an unjustified editorial choice. `config.PRICE_REPORT_PATTERN` flags them
+and `features.py` emits `n_price_reports`, `n_non_price` and `price_report_share`.
+H1 must be reported three ways: all headlines, excluding price reports, and price
+reports only — the last as a placebo. If sentiment only works with them included,
+it is momentum.
+
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):

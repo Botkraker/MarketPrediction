@@ -14,13 +14,16 @@ The audience is NLP and quantitative finance students and researchers working on
 - Nine headline scrapers (French, Arabic and English outlets) plus a Tunindex OHLC scraper: `scrape_*.py`, `leconomistemaghrebin_Scraper.py`.
 - Reproducible data audit of the raw headline CSVs, including a **wrong-country provenance check**: `audit/build_audit.py`, findings in [audit/AUDIT_REPORT.md](audit/AUDIT_REPORT.md).
 - Preprocessing pipeline: cleaning and source windows, bilingual relevance filter, headline deduplication, funnel counts.
-- Sentiment gold-set tooling: stratified sampling, local LLM pre-annotation, adjudication, frozen train/validation/evaluation split.
+- Sentiment gold-set tooling: stratified sampling, local LLM pre-annotation, adjudication (single-annotator or majority vote), frozen train/validation/evaluation split.
+- Inter-annotator agreement: Fleiss' kappa and weighted Cohen's kappa across any number of LLM annotators (`preprocessing/agreement.py`).
+- Trading-calendar alignment and daily feature construction (`preprocessing/features.py`).
+- Price-only walk-forward baseline, the pre-registered bar for H1 (`preprocessing/baseline.py`).
 - Unit tests for normalisation, relevance, dedup, gold set, annotation and split logic.
 - Data versioned with DVC.
 
 ## Tech stack
 
-Python, pandas, requests, lxml, curl_cffi, DuckDB, matplotlib, langdetect, fastText (`lid.176.ftz` model), pytest, DVC.
+Python, pandas, NumPy, scikit-learn, SciPy, statsmodels, requests, lxml, curl_cffi, DuckDB, matplotlib, langdetect, fastText (`lid.176.ftz` model), pytest, DVC.
 
 ## Architecture
 
@@ -33,6 +36,9 @@ flowchart LR
     E --> F[llm_annotate.py + adjudicate]
     F --> G[split.py]
     B --> H[audit/build_audit.py]
+    G --> I[agreement.py]
+    D --> J[features.py + trading_calendar.csv]
+    J --> K[baseline.py]
 ```
 
 ### Active sources
@@ -53,7 +59,49 @@ Because `assabah` was the only Arabic source, the corpus is currently **French-d
 (~97% fr, plus en); the bilingual comparison in H2 is on hold until an Arabic outlet is
 scraped. This is a known limitation, not a finding.
 
-Later stages in the blueprint (language-routed sentiment scoring, daily features aligned to the BVMT calendar, walk-forward models, SHAP) are not implemented here.
+### Modelling status
+
+Daily feature construction and the price-only walk-forward baseline **are**
+implemented. The sentiment model itself is not: no classifier is trained, the
+42,645-headline corpus is unscored, and neither H1 nor H2 has been tested.
+
+**The pre-registered H1 bar.** Over 2,678 walk-forward predictions from 2014,
+"always predict up" scores **0.5493**. The best price-only model reaches 0.5564
+(McNemar p = 0.418 — not significant), and adding news *counts* makes it slightly
+worse. This bar was fixed before any sentiment score existed. Details and the
+supporting data characteristics are in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8c.
+
+Two constraints that follow from the data, both enforced in code:
+
+- **Returns are close-to-close.** `open` is the previous session's close for 33%
+  of rows, so `(close - open)/open` mixes two quantities (AUDIT_REPORT section 8b).
+- **News dated day D may only predict sessions strictly after D.** Headlines have
+  no time-of-day, so same-day mapping would leak.
+
+**A sentiment classifier baseline exists** (`preprocessing/sentiment_baseline.py`,
+TF-IDF + logistic): validation quadratic-weighted kappa **0.4715**, accuracy 0.6059
+against a 0.5900 majority floor. Report QWK rather than accuracy — 59% of labels are
+`positive`, which makes accuracy nearly blind. No transformer is fine-tuned yet; this
+baseline exists so that a fine-tuned model can be judged against something.
+
+### Two known threats to H1 validity
+
+Both documented with evidence in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8d.
+
+1. **The annotation prompt does not define the task.** It specifies JSON formatting
+   but never defines the labels, never says when `neutral` applies, and never anchors
+   sentiment to market impact rather than tone. The labels track growth-flavoured
+   vocabulary instead ("a draft environmental code" scores positive). Fix the prompt
+   before re-annotating.
+2. **Price-report headlines launder momentum into sentiment.** 10% of relevant
+   headlines restate the index's own move; their direction words match that day's
+   return with 84.3% accuracy, and read as a next-session feature they reach 0.5640
+   directional accuracy — beating both the constant (0.5493) and the best price-only
+   model (0.5564) with no news content. They are flagged, not dropped
+   (`config.PRICE_REPORT_PATTERN`); H1 must be reported with them, without them, and
+   on them alone as a placebo.
+
+Still not implemented: language-routed sentiment scoring, the H1/H2 tests, SHAP.
 
 ## Prerequisites
 
@@ -112,9 +160,23 @@ Build and annotate the sentiment gold set (defaults are set in each script):
 
 ```bash
 python preprocessing/gold.py --target 3000
-python preprocessing/llm_annotate.py
-python preprocessing/adjudicate_from_annotator.py
+python preprocessing/llm_annotate.py                      # annotator 1
+python preprocessing/llm_annotate.py --annotator 2 --model <other-model>
+python preprocessing/agreement.py                         # Fleiss / Cohen kappa
+python preprocessing/adjudicate_from_annotator.py --method majority
 python preprocessing/split.py
+```
+
+Use models from **different families** for annotators 2+; a second model from the
+same family measures its own consistency, not agreement. Majority ties are left
+blank on purpose and `split.py` refuses the file until they are resolved.
+
+Build daily features and run the price-only baseline:
+
+```bash
+python preprocessing/features.py --start 2014-01-01
+python preprocessing/baseline.py            # price-only bar for H1
+python preprocessing/sentiment_baseline.py  # TF-IDF bar for the sentiment model
 ```
 
 Rebuild the audit outputs in `audit/`:
@@ -129,7 +191,8 @@ python audit/build_audit.py
 .
 ├── scrape_*.py                  # one scraper per source, plus Tunindex OHLC
 ├── leconomistemaghrebin_Scraper.py
-├── preprocessing/               # cleaning, relevance, dedup, gold set, split, tests
+├── preprocessing/               # cleaning, relevance, dedup, gold set, split,
+│                                #   agreement, features, baseline, tests
 ├── audit/                       # raw-data audit script, report and CSV outputs
 ├── data/                        # DVC-tracked: raw/, curated/, per-ticker CSVs
 ├── data.dvc                     # DVC pointer for data/
@@ -143,9 +206,7 @@ python audit/build_audit.py
 python -m pytest preprocessing
 ```
 
-3 of 28 tests currently fail (`test_gold`, `test_adjudicate_from_annotator`,
-`test_llm_annotate`). Pre-existing and unrelated to source exclusion — verified identical
-before and after that change.
+56 tests, all passing.
 
 ## Contributing
 
