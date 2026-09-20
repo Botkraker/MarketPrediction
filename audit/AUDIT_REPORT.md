@@ -334,6 +334,29 @@ skew **12.5**, with the top 1% of sessions carrying 9.3% of all volume — it is
 driven by episodic block trades, not by news-reading flow. **Volume-based
 features are not advisable on this market.**
 
+### Return autocorrelation IS directionally exploitable (corrected 2026-09-20)
+
+> **CORRECTION.** This section previously stated the opposite, on the basis of a
+> lag-offset bug in `features.py`. Row *i* is session *i* and the target
+> `ret_next[i]` is session *i+1*, but lags were counted from the ROW, so
+> `ret_lag1[i] = ret[i-1]`. The most recent AVAILABLE return — `ret[i]`, known the
+> moment session *i* closes — was in no feature set. The baseline was predicting
+> session *i+1* from data ending at *i-1*. Corrected by adding `ret_lag0`; lags are
+> now counted from the target and a regression test enforces it
+> (`test_features.py::test_most_recent_available_return_is_exposed_as_ret_lag0`).
+
+| feature set | accuracy | OOS R² | McNemar vs always-up |
+|---|---:|---:|---:|
+| `ret_lag1..3` (buggy) | 0.5564 | +0.0068 | p = 0.418 **ns** |
+| `ret_lag0..2` (correct) | **0.5736** | **+0.0645** | **p = 0.028 SIG** |
+
+`corr(ret_t-1, ret_t) = +0.263` and `corr(|ret|, |ret|_{t-1}) = +0.387`, both far
+above a liquid-market norm, consistent with thin trading and partial adjustment
+(only 20 stale closes, so not an artifact). Unlike the earlier claim, this **does**
+translate into directional predictability.
+
+### Superseded text follows (retained for the record)
+
 ### Return autocorrelation is real but not directionally exploitable
 
 `corr(ret_t-1, ret_t) = +0.263` and `corr(|ret|_t-1, |ret|_t) = +0.387` — both
@@ -430,9 +453,21 @@ feature they still predict at r=0.133 — because return autocorrelation is +0.2
 | best price-only model | 0.5564 |
 | **yesterday's price report read as text** | **0.5640** |
 
-A feature with **no news content** beats the momentum model. An uncontrolled
-sentiment model could therefore report "sentiment improves prediction" while
-measuring only autocorrelation.
+> **CORRECTION 2026-09-20.** The comparison above used the buggy baseline
+> (§8c). With `ret_lag0` restored the momentum model reaches **0.5736** and beats
+> the price-report feature (0.5654 under the tightened v2 regex). The dramatic
+> framing — "a no-news feature beats the momentum model" — was an artifact of a
+> handicapped control.
+>
+> **The confound itself is still real and still needs controlling.** Under the v2
+> pattern, price-report direction words match the same-day return at **r = +0.629,
+> 92.9% sign agreement** (up from 0.519/84.3%, because the pattern is now more
+> precise). Sentiment built on them re-encodes `ret_t`, which is exactly what
+> `ret_lag0` now controls for. The three-arm design stands; only the motivating
+> number changed.
+
+An uncontrolled sentiment model could still report "sentiment improves prediction"
+while measuring autocorrelation, which is why the placebo arm exists.
 
 **Control, not removal.** A market report is real news; dropping it by default
 would be an unjustified editorial choice. `config.PRICE_REPORT_PATTERN` flags them
@@ -440,6 +475,170 @@ and `features.py` emits `n_price_reports`, `n_non_price` and `price_report_share
 H1 must be reported three ways: all headlines, excluding price reports, and price
 reports only — the last as a placebo. If sentiment only works with them included,
 it is momentum.
+
+## 8e. Adversarial review, 2026-09-20 — findings and dispositions
+
+An independent adversarial review of the modelling chain was commissioned and its
+claims were independently recomputed before being accepted. Two documented findings
+were overturned by it; two of its own claims did not survive recomputation. All
+numbers below were recomputed from the repo's data.
+
+| # | finding | status |
+|---|---|---|
+| R1 | Lag-offset bug: the most recent available return was in no feature set | **CONFIRMED — fixed.** §8c, §8d rewritten |
+| R2 | Sentiment classifier fitted on a random split spanning 2005-2026 | **CONFIRMED — fixed** |
+| R3a | No inter-annotator agreement exists | **CONFIRMED — still open** (needs LM Studio) |
+| R3b | Label scale is "not monotone" against returns | **PARTLY REJECTED** — see below |
+| R3c | Classifier not distinguishable from a constant | **CONFIRMED — still open** |
+| S1 | `PRICE_REPORT_PATTERN` mis-specified; a test certified the bug | **CONFIRMED — fixed** |
+| S2 | Placebo arm has no data on ~27% of sessions; harness would crash | **CONFIRMED — fixed** |
+| S3 | Underpowered; no power analysis | **CONFIRMED — fixed** (MDE now reported) |
+| S4 | Multiple comparisons uncorrected | **CONFIRMED — fixed** (Holm) |
+| S5 | No Arabic in the study | **CONFIRMED** — framing corrected |
+| S6 | Relevance filter unvalidated, wrong-country false positives | **CONFIRMED — fixed**, plus a larger false-negative mode the review missed |
+| M3 | Placebo necessary but not sufficient | **CONFIRMED — fixed** (orthogonalised arm) |
+| M6 | H2 would rank coverage length, not contribution | **CONFIRMED — fixed** |
+
+### R3b — partly rejected
+
+The review reported `neutral > positive > very_positive` on **same-day** returns and
+concluded the ordinal scale is non-monotone. Recomputed against the **next-session**
+return (what H1 actually predicts):
+
+```
+very_negative  -4.6 bp  n=86      negative  -1.1 bp  n=668
+neutral        +3.6 bp  n=273     positive  +6.1 bp  n=1724
+very_positive  +2.5 bp  n=176
+```
+
+Monotone for four of five levels; only `very_positive` inverts. That inversion is
+**not significant**: Welch p = 0.402, bootstrap 95% CI on (very_positive − positive)
+= [−12.3, +4.5] bp, which includes zero. With n=176 the extreme is unpowered, not
+inverted. The equal-spacing assumption in `score_corpus.LABEL_SCORE` is therefore
+**unvalidated, not contradicted** — a weaker but still real criticism.
+
+What does survive: row-level Spearman(label, next return) = **+0.0517** (p=0.005),
+and collapsing to three classes gives **+0.0544**. The five-point scale is not
+earning its granularity. `score_corpus.monotonicity_check()` now reports per-label
+counts and flags under-populated levels.
+
+### S3 — the design cannot detect the effect it is looking for
+
+Computed by `hypothesis_tests.minimum_detectable_effect()` on the real run:
+
+```
+discordant pairs            853
+SE of accuracy difference   0.0109
+MDE at 80% power            3.06 pp
+typical published effect    1-2 pp
+adequately_powered          False
+```
+
+**"H1 NOT SUPPORTED" is the guaranteed outcome of this design whether or not H1 is
+true.** Any null result must be reported as *inconclusive*, not as evidence of
+absence. A continuous-outcome test (OOS R² / Diebold-Mariano on returns rather than
+signs) would use the magnitude information the sign test discards and should be
+added before any claim is made.
+
+### S6 — fixed on both sides, and the larger side was missed
+
+*False positives.* Generic keywords (`inflation`, `croissance`, `growth`, `gdp`)
+matched foreign-country headlines: "L'inflation au Maroc recule de 0,6%", "Why
+Indians are unhappy about 7.8% economic growth". A country-negation rule
+(`preprocessing/relevance_geo.py`) now blocks a generic match when a headline names
+a foreign country and no Tunisian entity. Wrong-country rate inside `tunisia_econ`:
+**2.80% → 0.00%**; 1,111 rows retagged.
+
+*False negatives — larger, and not in the review.* The keyword lists are TOPIC
+words, so a headline about a listed company carries none of them. **7,215 rows
+naming a BVMT issuer were being discarded as `other`** — "Le bénéfice net de Land'Or
+bondit de 80 %", "MPBS : Le bénéfice semestriel recule de 4%", "Carthage Cement
+confirme la consolidation". These are the most index-relevant headlines in the
+corpus. `config.KEYWORDS_ISSUERS` now loads the 79 issuer names (≥4 chars) from
+`data/raw/bvmt/sotcks_list.csv`, so the list cannot drift from the actual
+constituents. Short tickers (AB, BT, CC, SAH) are excluded — they match inside
+ordinary words. Country negation still applies on top.
+
+Net corpus effect: canonical **42,645 → 46,228** (−789 wrong-country, +4,372 issuer
+recoveries).
+
+Still unvalidated: 3,186 rows (8.25%) match a generic keyword and name no country at
+all. Only hand labels settle those. `preprocessing/relevance_validation.py worksheet`
+generates a stratified sheet; `audit/language_relevance_sample.csv` remains unfilled.
+
+### S5 — there is no Arabic in this study
+
+`data/curated/03_dedup.parquet` relevant canonical rows: **fr 41,597 / en 1,048 /
+ar 0.** The only Arabic source was `assabah`, correctly excluded as Moroccan (§6b),
+which also removed all 68 Arabic gold rows. "French/Arabic news sentiment" is not
+supportable; the corpus is French with ~2.4% English.
+
+Related: `lang` is **assigned per source** from `config.SOURCE_LANG`
+(`relevance.py`), not detected per headline. Every "by language" figure is therefore
+a by-source-group figure wearing a language label, and should be described that way.
+
+### M5 — near-duplicate leakage: fixed, but it is NOT the cause of the overfit gap
+
+`dedup.py` clustered by SHA-1 of the raw normalised headline, so template-driven
+financial headlines differing only in a number or date formed separate clusters and
+could land on opposite sides of the split.
+
+Fixed by hashing a **template key** instead: numbers and percentages masked to `#`
+(with the sign preserved), French weekday/month words masked to `@`, punctuation
+folded. Deterministic, no threshold, no similarity pass.
+
+Measured on the 47,784-row relevant corpus: clusters **47,198 → 46,013** (−2.51%),
+806 merged groups absorbing 1,991 exact clusters, and **2,183 near-identical pairs
+that exact hashing had placed in different clusters** are now together. ilboursa is
+worst affected at 6.71% of rows, as expected for a template-driven outlet.
+
+**Two merges were deliberately rejected.** A token-sorted key would have collapsed
+100 further groups, 98 benign — but two were semantic opposites:
+
+```
+"Fitch révise la perspective de la Tunisie de négative à stable"
+"Fitch révise la perspective de la Tunisie de stable à négative"
+
+"le dinar s'apprécie vis-à-vis du dollar et se déprécie face à l'euro"
+"le dinar se déprécie vis-à-vis du dollar et s'apprécie face à l'euro"
+```
+
+A 2% error rate landing exactly on the sentiment-bearing cases is not worth 100
+extra merges, so clause order stays significant. The same reasoning preserves the
+`+`/`-` sign: stripping it would have merged `à -0,36%` with `à +0,21%`.
+
+**Correcting the premise.** The review offered this as "a plausible contributor to
+the 0.893 train / 0.6059 validation gap". Measured against the frozen split, it is
+not: **1 of 439 validation rows (0.23%) and 0 of 979 evaluation rows** share a
+cluster with a training row, because `gold.py` already samples one row per exact
+cluster. M5 moves validation accuracy by at most 0.23pp of a 28.7pp gap.
+
+The overfit is a **capacity/sample-size problem**, not leakage: 1,514 training rows
+against a 60k-feature char-ngram space over 5 ordinal classes, held-out accuracy
+1.6pp above the majority floor, macro-F1 0.464. M5 should be reported as a
+correctness guard — and as a prerequisite for any gold-set expansion, where
+collisions grow roughly quadratically — not as the explanation.
+
+### M1 — "pre-registration" is not verifiable, and one choice was outcome-selected
+
+`hypothesis_tests.py` claims in its docstring to have been written before any
+sentiment score existed. That is backed only by a file mtime — no commit tag, no
+external registration. Worse, `kind="regress"` is the default *because* §8c had
+already compared regress against classify across 8 configurations on the same data
+H1 is tested on. **The estimator was selected on the outcome.** `min_train=500` and
+`refit_every=20` are likewise unjustified free parameters that set the test window.
+Disposition: commit and tag before generating any result intended for publication,
+and sensitivity-test both parameters.
+
+### M4 — the gold sample does not match the corpus it scores
+
+`gold.py` takes exactly one row per `source × relevance_tag × year` stratum before
+filling at random, which over-weights thin source-years (tap: 6 rows; economist: 15)
+relative to their corpus share. The classifier's training prior therefore does not
+match the corpus prior, and a daily `sent_mean` is partly driven by *which sources
+published that day*. Additionally `split.py` stratifies the evaluation split by
+`adjudicated_label`, guaranteeing the held-out label distribution matches training by
+construction — so 0.6059 is optimistic relative to deployment.
 
 ## 9. Explicit blocked/skipped items (for transparency)
 

@@ -9,10 +9,13 @@ def _series(n=700, seed=0):
     ret = rng.normal(0.0005, 0.0045, n)
     return pd.DataFrame({
         "session": pd.bdate_range("2014-01-01", periods=n),
+        "ret_lag0": ret,
         "ret_lag1": np.roll(ret, 1),
         "ret_lag2": np.roll(ret, 2),
         "ret_lag3": np.roll(ret, 3),
+        "abs_ret_lag0": np.abs(ret),
         "abs_ret_lag1": np.abs(np.roll(ret, 1)),
+        "log_headlines_lag0": rng.normal(2.5, 0.4, n),
         "log_headlines_lag1": rng.normal(2.5, 0.4, n),
         "ret_next": ret,
     }).iloc[3:].reset_index(drop=True)
@@ -20,9 +23,9 @@ def _series(n=700, seed=0):
 
 def test_walk_forward_never_predicts_the_training_region():
     frame = _series()
-    preds = walk_forward(frame, ["ret_lag1"], min_train=500, refit_every=20)
+    preds = walk_forward(frame, ["ret_lag0"], min_train=500, refit_every=20)
     # first prediction is for row 500, not row 0 -- the first 500 are train-only
-    assert len(preds) == len(frame.dropna(subset=["ret_lag1", "ret_next"])) - 500
+    assert len(preds) == len(frame.dropna(subset=["ret_lag0", "ret_next"])) - 500
     assert preds.session.min() > frame.session.iloc[499]
 
 
@@ -39,7 +42,7 @@ def test_a_future_leaking_feature_scores_near_perfect():
 
 def test_constant_baseline_uses_only_training_majority():
     frame = _series()
-    preds = walk_forward(frame, ["ret_lag1"], min_train=500, refit_every=20)
+    preds = walk_forward(frame, ["ret_lag0"], min_train=500, refit_every=20)
     assert set(preds.y_constant.unique()) <= {0, 1}
 
 

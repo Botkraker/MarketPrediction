@@ -4,6 +4,7 @@ here instead of hardcoded inline. Change the audit report's decision ->
 change it here -> re-run the pipeline.
 """
 from datetime import date
+from pathlib import Path
 
 # source -> (window_start or None, window_end or None). None means "use
 # whatever the raw data has". Sources not listed here are excluded (the
@@ -133,7 +134,62 @@ CURATED_DIR_NAME = "curated"
 # be reported three ways: all headlines, excluding price reports, and price
 # reports only (a placebo -- if sentiment only works there, it is momentum).
 # Concentrated in ilboursa (11.9%), kapitalis (11.2%), leconomistmaghrebin (9.3%).
-PRICE_REPORT_PATTERN = (
-    r"tunindex|bourse de tunis|cl\u00f4tur|cloture|s\u00e9ance du|seance du|"
-    r"en hausse de|en baisse de|points"
+# v2. v1 was `tunindex|bourse de tunis|clôtur|cloture|séance du|seance du|
+# en hausse de|en baisse de|points` and was mis-specified in both directions:
+#
+#   OVER: the bare token `points` matched 96 headlines that are central-bank
+#   RATE DECISIONS -- "La BCT abaisse de 50 points son taux directeur à 7 %",
+#   "La BCE relève ses taux de 25 points de base". Those are the most
+#   market-relevant headlines in the corpus. v1 removed them from the ex_price
+#   TREATMENT arm and put them in the PLACEBO, inverting the control's logic.
+#   `bourse de tunis` alone matched 1,908 rows including governance and IPO news
+#   ("Bilel Sahnoun nommé DG", "Maille Club prépare son entrée à la bourse").
+#
+#   UNDER: French-only (1 of 1,048 English rows flagged) and missing `bvmt`,
+#   so "BVMT : Le rebond continue" went unflagged.
+#
+# v2 requires CO-OCCURRENCE: an index/market token AND a move/close verb. A
+# headline that merely mentions the exchange is not a price report; one that
+# says what the index did is.
+PRICE_REPORT_INDEX = r"tunindex|bvmt|bourse de tunis|tunis stock exchange|l'indice|the index"
+PRICE_REPORT_MOVE = (
+    r"cl\u00f4tur|cloture|clos|termine|finit|s\u00e9ance du|seance du|"
+    r"en hausse|en baisse|gagne|perd|recul|progress|rebond|repli|chute|grimpe|"
+    r"c\u00e8de|s'appr\u00e9cie|chutes?|chute|stable|inchang|"
+    r"clos(?:e|ed)|end(?:s|ed)|gain(?:s|ed)|los(?:es|t)|ris(?:es|en)|f(?:all|ell)|"
+    r"\d+[.,]\d+\s*%|[+-]\s*\d"
 )
+PRICE_REPORT_PATTERN = rf"(?=.*(?:{PRICE_REPORT_INDEX}))(?=.*(?:{PRICE_REPORT_MOVE}))"
+
+
+# --- BVMT issuer names: the filter's largest FALSE-NEGATIVE source -------------
+# The keyword lists above are topic words (inflation, dinar, bourse...). A
+# headline about a LISTED COMPANY carries none of them, so 7,215 rows naming a
+# BVMT issuer were tagged `other` and discarded -- e.g. "Le benefice net de
+# Land'Or bondit de 80 %", "MPBS : Le benefice semestriel recule de 4%",
+# "Carthage Cement confirme la consolidation de sa structure financiere".
+# Those are the most index-relevant headlines in the corpus.
+#
+# Loaded from data/raw/bvmt/sotcks_list.csv so the list cannot drift from the
+# actual index constituents. NAMES ONLY, >=4 characters: tickers like AB, BT,
+# CC, SAH are short enough to match inside ordinary words and inside other
+# issuers' names. Country negation still applies on top (relevance_geo.py).
+ISSUER_STOPWORDS = {"tunisie", "tunis", "banque", "credit", "societe", "assurances"}
+
+
+def _load_issuer_names() -> list[str]:
+    path = (Path(__file__).resolve().parent.parent
+            / "data" / "raw" / "bvmt" / "sotcks_list.csv")
+    if not path.exists():
+        return []
+    import csv
+    names = set()
+    with open(path, encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh):
+            name = (row.get("name") or "").strip().lower()
+            if len(name) >= 4 and name not in ISSUER_STOPWORDS:
+                names.add(name)
+    return sorted(names)
+
+
+KEYWORDS_ISSUERS = _load_issuer_names()

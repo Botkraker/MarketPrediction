@@ -31,13 +31,16 @@ DEFAULT_INPUT = CURATED / "daily_features.parquet"
 DEFAULT_OUTPUT = CURATED / "baseline_results.json"
 
 FEATURE_SETS = {
-    "momentum":        ["ret_lag1"],
-    "momentum3":       ["ret_lag1", "ret_lag2", "ret_lag3"],
-    "momentum3_vol":   ["ret_lag1", "ret_lag2", "ret_lag3",
-                        "abs_ret_lag1", "abs_ret_lag2", "abs_ret_lag3"],
+    # ret_lag0 is the last CLOSED session's return -- available at prediction
+    # time and the strongest single predictor. Omitting it (an earlier bug)
+    # costs 1.7pp of accuracy and turns a significant result into a null.
+    "momentum":        ["ret_lag0"],
+    "momentum3":       ["ret_lag0", "ret_lag1", "ret_lag2"],
+    "momentum3_vol":   ["ret_lag0", "ret_lag1", "ret_lag2",
+                        "abs_ret_lag0", "abs_ret_lag1", "abs_ret_lag2"],
     # news VOLUME only -- still price-only in spirit (no sentiment), included to
     # show whether counting headlines adds anything before we ever score them.
-    "momentum3_news":  ["ret_lag1", "ret_lag2", "ret_lag3", "log_headlines_lag1"],
+    "momentum3_news":  ["ret_lag0", "ret_lag1", "ret_lag2", "log_headlines_lag0"],
 }
 
 
