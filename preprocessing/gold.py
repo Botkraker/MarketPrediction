@@ -37,6 +37,17 @@ ANNOTATION_COLUMNS = [
 ]
 
 
+def _display_path(path: Path) -> str:
+    """Repo-relative path for metadata, falling back to absolute when the
+    path is outside the repo (e.g. a pytest tmp_path). Mirrors the same
+    helper in split.py / adjudicate_from_annotator.py; gold.py cannot import
+    theirs without a circular import (split.py imports LABELS from here)."""
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def _period(value: object) -> str:
     if pd.isna(value):
         return "unknown"
@@ -140,8 +151,8 @@ def build_gold(
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     sample[columns].to_csv(output_path, index=False)
     metadata = {
-        "input": str(input_path.relative_to(ROOT)),
-        "output": str(output_path.relative_to(ROOT)),
+        "input": _display_path(input_path),
+        "output": _display_path(output_path),
         "target_requested": int(target),
         "rows_written": len(sample),
         "seed": seed,

@@ -27,7 +27,11 @@ def _parse_pseudo_annotation(content: str) -> dict[str, str] | None:
     malformed = content.replace('\\"', '"').strip('"')
     match = re.search(
         r'(?:label|value)\s*:\s*"(?P<label>[^"]+)"\s*,\s*'
-        r'reason\s*:\s*"(?P<reason>.+)"',
+        # Trailing quote optional: json.loads() may already have unwrapped the
+        # payload, after which .strip('"') above eats the final field's real
+        # closing quote. Non-greedy + anchored so a present quote is not
+        # swallowed into the captured reason.
+        r'reason\s*:\s*"(?P<reason>.+?)"?\s*$',
         malformed,
         flags=re.DOTALL,
     )
@@ -118,34 +122,57 @@ def annotate_headline(
     ) from last_error
 
 
+def annotator_columns(annotator: int) -> tuple[str, str, str]:
+    """(label, notes, model) column names for annotator N.
+
+    Annotator 1 keeps the original `annotation_notes` name so the existing
+    3,000-row file needs no migration; annotators 2+ get their own notes column.
+    """
+    if annotator < 1:
+        raise ValueError("annotator must be >= 1")
+    notes = "annotation_notes" if annotator == 1 else f"annotator_{annotator}_notes"
+    return f"annotator_{annotator}_label", notes, f"annotator_{annotator}_model"
+
+
 def annotate_file(
     input_path: Path = DEFAULT_OUTPUT,
     output_path: Path | None = None,
     endpoint: str = DEFAULT_ENDPOINT,
     model: str = DEFAULT_MODEL,
     timeout: int = 120,
+    annotator: int = 1,
 ) -> pd.DataFrame:
-    """Annotate blank rows and persist after every successful row."""
+    """Annotate blank rows and persist after every successful row.
+
+    `annotator` selects which annotator_N_* columns are written, so a second or
+    third model can label the same gold set independently for an agreement
+    statistic. Rows already labelled by THIS annotator are skipped, so a run is
+    resumable and never overwrites another annotator's work.
+    """
     output_path = output_path or input_path
+    label_col, notes_col, model_col = annotator_columns(annotator)
     df = pd.read_csv(input_path, keep_default_na=False)
     required = {"headline_clean", "lang", "relevance_tag"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Input is missing required columns: {sorted(missing)}")
-    for column in ("annotator_1_label", "annotation_notes", "annotation_status"):
+    for column in (label_col, notes_col, model_col, "annotation_status"):
         if column not in df.columns:
             df[column] = ""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     for index, row in df.iterrows():
-        if row["annotator_1_label"] and row["annotation_notes"]:
+        if row[label_col] and row[notes_col]:
             continue
         label, reason = annotate_headline(
             row["headline_clean"], row["lang"], row["relevance_tag"],
             endpoint=endpoint, model=model, timeout=timeout,
         )
-        df.at[index, "annotator_1_label"] = label
-        df.at[index, "annotation_notes"] = reason
+        df.at[index, label_col] = label
+        df.at[index, notes_col] = reason
+        # Which model produced this label travels with the data -- an agreement
+        # statistic is meaningless without knowing what was compared.
+        df.at[index, model_col] = model
         df.at[index, "annotation_status"] = "llm_annotated"
         df.to_csv(output_path, index=False)
     return df
@@ -158,9 +185,14 @@ def main() -> None:
     parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--annotator", type=int, default=1,
+                        help="which annotator_N_* columns to write (default 1)")
     args = parser.parse_args()
-    result = annotate_file(args.input, args.output, args.endpoint, args.model, args.timeout)
-    print(f"Annotated {result['annotator_1_label'].ne('').sum()} of {len(result)} rows")
+    result = annotate_file(args.input, args.output, args.endpoint, args.model,
+                           args.timeout, args.annotator)
+    label_col, _, _ = annotator_columns(args.annotator)
+    print(f"Annotated {result[label_col].ne('').sum()} of {len(result)} rows "
+          f"as {label_col} using {args.model}")
 
 
 if __name__ == "__main__":
