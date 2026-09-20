@@ -678,6 +678,70 @@ published that day*. Additionally `split.py` stratifies the evaluation split by
 `adjudicated_label`, guaranteeing the held-out label distribution matches training by
 construction — so 0.6059 is optimistic relative to deployment.
 
+## 8f. Annotation pilot: the first inter-annotator agreement (2026-09-20)
+
+R3a said no reliability estimate exists and none could be produced without a second
+annotator. That was treated as blocked on a local LM Studio server, which turns out
+not to be installed on this machine at all. The block was wrong in a simpler way:
+**an LLM was available the whole time.** Annotator 2 below is Claude (Opus 5), a
+different model family from qwen2.5-7b, which is what a cross-family agreement
+statistic requires.
+
+60 headlines, stratified at 12 per annotator-1 label. Artifacts:
+`data/curated/annotation_pilot_v2.csv`, `..._agreement.json`.
+
+| metric | value |
+|---|---:|
+| raw agreement | 48.3% |
+| Fleiss κ (nominal) | 0.328 — "fair" |
+| **quadratic-weighted Cohen κ** | **0.659 — "substantial"** |
+| directional agreement (neg/neutral/pos) | 68.3% |
+
+**The gap between 0.328 and 0.659 is the finding.** The annotators disagree on the
+exact level and agree on the direction, which is precisely what an ordinal-weighted
+statistic is built to show and what a nominal one hides. Any paper reporting only
+Fleiss on this scale would understate agreement by half.
+
+### The disagreements are systematic, not random
+
+Confusion is off-diagonal by exactly one level in a consistent direction:
+qwen `very_negative` → Claude `negative` (7), qwen `positive` → Claude `neutral` (7),
+qwen `very_positive` → Claude `positive` (5). 17 of 60 moved toward neutral.
+
+The large disagreements reproduce §8d's documented v1 failure mode exactly:
+
+| headline | qwen (v1) | Claude (v2) |
+|---|---|---|
+| "BCT : refinancement des banques à son **plus haut historique**" | very_positive | **negative** |
+| "Le FMI accorde à **l'Ukraine** un plan d'aide de 15,6 Mds$" | very_negative | neutral |
+| "signature de la déclaration « The last mile to get a job »" | very_positive | neutral |
+| "BNP Paribas réalise un bénéfice record de 11 Mds€" | very_positive | neutral |
+| "BIAT sacrée « Meilleure banque sur le marché de change »" | very_positive | neutral |
+
+The first is the clearest case: record bank refinancing means banks cannot fund
+themselves — liquidity stress. v1 read "plus haut historique" as a growth phrase and
+scored it very_positive. The second scores IMF aid *to Ukraine* as very_negative
+*for Tunisia*. Both are independently checkable in the pilot CSV.
+
+### What this pilot does NOT establish
+
+- **n = 60**, stratified to over-sample rare extremes, so raw agreement is deflated
+  relative to a natural sample. κ is chance-corrected and less affected.
+- **Annotator 2 authored PROMPT_V2.** Applying a rubric one wrote is a genuine
+  conflict of interest. The individual disagreements are checkable, but this is not
+  a substitute for an independent annotator.
+- **The two annotators used different prompts** (v1 vs v2), so this κ measures
+  prompt-version difference *confounded with* model difference and cannot separate
+  them. To isolate the model, run both under v2.
+- The full 2,932-row gold set remains single-annotator v1. Nothing here changes it.
+
+### What it does establish
+
+The agreement machinery works end to end, an ordinal-weighted κ is the right
+headline statistic for this scale, and v1's labels carry a **measurable, systematic**
+bias rather than random noise — which is consistent with §8e's finding that adding
+v1-derived sentiment makes the return forecast significantly worse.
+
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):
