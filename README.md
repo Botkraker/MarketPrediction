@@ -81,9 +81,17 @@ significant). An earlier revision reported 0.5564/p=0.418 — that was a lag-off
 bug which excluded the most recent available return from every feature set. See
 [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sections 8c and 8e.
 
-**The design is underpowered.** MDE at 80% power is **3.06pp**; published daily
-news-sentiment effects on index direction are 1-2pp. `hypothesis_tests.py` reports
-this alongside every result.
+**The design is underpowered on the sign test.** MDE at 80% power is **3.06pp**;
+published daily news-sentiment effects on index direction are 1-2pp. So a null from
+the sign test alone is *inconclusive*. `hypothesis_tests.py` therefore also runs a
+**Diebold-Mariano test on squared-error loss of returns** (Newey-West HAC), which
+uses the magnitude the sign test discards and is far better powered.
+
+**The momentum result is not robust to the test-window start.** `sensitivity.py`
+grids `min_train` x `refit_every`: accuracy is stable (0.5712-0.5750) but the result
+is significant in only 8 of 16 configurations, all at `min_train <= 500`, because a
+later start raises the always-up constant from 0.5410 to 0.5579. Report the grid,
+not the favourable cell.
 
 Two constraints that follow from the data, both enforced in code:
 
@@ -238,7 +246,8 @@ python preprocessing/score_corpus.py        # leakage-free expanding-window scor
 python preprocessing/features.py --start 2014-01-01
 python preprocessing/baseline.py            # price-only bar for H1
 python preprocessing/sentiment_baseline.py  # TF-IDF bar for the sentiment model
-python preprocessing/hypothesis_tests.py    # H1, four arms, Holm-corrected
+python preprocessing/hypothesis_tests.py    # H1: four arms, Holm-corrected, sign + DM tests
+python preprocessing/sensitivity.py         # robustness to min_train / refit_every
 ```
 
 Validate the relevance filter (the worksheet is generated; hand labels are not):
@@ -275,7 +284,7 @@ python audit/build_audit.py
 python -m pytest preprocessing
 ```
 
-104 tests, all passing.
+114 tests, all passing.
 
 ## Contributing
 
