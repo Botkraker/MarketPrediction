@@ -15,6 +15,15 @@ THE TWO RULES THIS FILE EXISTS TO ENFORCE
 
 News on non-session days (weekends, the 191 holidays) accumulates forward to the
 next session, so nothing is discarded.
+
+RELAXING RULE 2 LATER
+`scrape_ilboursa.py` now emits `published_at` (full timestamp) and `url`, but the
+26,596 rows currently in data/raw/ are still date-only -- the fix applies from the
+next extraction. Once ilboursa is re-scraped, its headlines can be split around the
+~14:10 Tunis close and pre-close items aligned to the SAME session, recovering
+intraday signal on ~35% of the corpus. Do this per-source: the other sources have no
+timestamps and must keep the strict rule, so the alignment becomes mixed and the
+feature table needs a column recording which rule each headline used.
 """
 
 import argparse

@@ -64,7 +64,19 @@ directly), `duplicate_summary.csv`.
 
 ## 3. Scraper defects found (fix + re-extract, do not hand-patch)
 
-1. **`scrape_ilboursa.py` drops real data it already has.** `parse_rows()` parses a full
+1. **`scrape_ilboursa.py` drops real data it already has.** — **FIXED 2026-09-20 (re-scrape pending).**
+   `parse_rows()` returned `(href, headline, dt)` and `collect()` keyed the dict by
+   `href`, but `articles.values()` discarded the key and `main()` wrote only
+   `[headline, date]`. The scraper now writes `headline;date;published_at;url`;
+   `headline` and `date` stay first and unchanged so `preprocessing/io_raw.py` and
+   `audit/build_audit.py` are unaffected (both select columns by name). Guarded by
+   `preprocessing/test_scrape_ilboursa.py`.
+   **The 26,596 rows currently in `data/raw/ilboursa_headlines.csv` are still
+   date-only** — the fix takes effect on the next extraction. Until then
+   `features.py` must keep the conservative rule (news dated D predicts sessions
+   strictly after D). Once re-scraped, ilboursa headlines can be split around the
+   ~14:10 Tunis close and aligned to the same session, recovering intraday signal
+   on 35% of the corpus. Original finding follows. `parse_rows()` parses a full
    `datetime` (`%d/%m/%Y %H:%M`) and captures the article `href`, but `main()` only writes
    `[headline, dt.strftime("%Y-%m-%d")]` to the CSV — the time-of-day and the URL are computed
    and then thrown away. This is the single highest-value fix: re-extracting adds real

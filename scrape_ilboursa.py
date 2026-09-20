@@ -147,7 +147,9 @@ def main():
             for href, headline, dt in rows:
                 if dt.date() < STOP_DATE:
                     continue
-                articles[href] = (headline, dt)
+                # Keep href in the VALUE too: articles.values() below would
+                # otherwise drop the URL that is sitting right here as the key.
+                articles[href] = (headline, dt, href)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(fetch_date, d): d for d in dates}
@@ -175,11 +177,24 @@ def main():
 
     rows_out = sorted(articles.values(), key=lambda x: x[1], reverse=True)
 
+    # parse_rows() already parses a full "%d/%m/%Y %H:%M" timestamp and captures
+    # the article href. Earlier revisions computed both and then wrote only the
+    # date, discarding real time-of-day on ~26.6k rows (AUDIT_REPORT.md section 3.1).
+    # `headline` and `date` are kept first and unchanged so existing loaders
+    # (preprocessing/io_raw.py, audit/build_audit.py) are unaffected; the new
+    # columns are additive.
+    #
+    # Why time-of-day matters: headlines currently carry no clock time, so
+    # features.py must assume a headline dated D may only predict sessions
+    # STRICTLY after D -- a published-at-18:00 headline would otherwise "predict"
+    # a close that already happened. With real timestamps, same-session alignment
+    # becomes possible for this source (BVMT closes ~14:10 Tunis time).
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f, delimiter=";")
-        writer.writerow(["headline", "date"])
-        for headline, dt in rows_out:
-            writer.writerow([headline, dt.strftime("%Y-%m-%d")])
+        writer.writerow(["headline", "date", "published_at", "url"])
+        for headline, dt, href in rows_out:
+            writer.writerow([headline, dt.strftime("%Y-%m-%d"),
+                             dt.strftime("%Y-%m-%d %H:%M"), href])
 
     print(f"Saved {len(rows_out)} headlines to {OUTPUT_FILE} in {time.time() - start:.1f}s")
     if failed:
