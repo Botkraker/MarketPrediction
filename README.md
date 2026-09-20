@@ -75,11 +75,14 @@ The corpus is scored leakage-free by `score_corpus.py --mode expanding`: 36,795 
 46,013 headlines carry a score, and the remaining 9,218 are left **unscored rather
 than imputed** because no gold labels predate them.
 
-**The H1 bar.** Over 2,678 walk-forward predictions from 2014, "always predict up"
-scores **0.5493**; the best price-only model reaches **0.5736** (McNemar p = 0.028,
-significant). An earlier revision reported 0.5564/p=0.418 — that was a lag-offset
-bug which excluded the most recent available return from every feature set. See
-[AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sections 8c and 8e.
+**The H1 bar.** Per blueprint §6.2, **ROC-AUC is the primary metric and balanced
+accuracy / MCC replace raw accuracy as the headline** — at a 54.9% base rate,
+accuracy is nearly blind. Over 2,678 walk-forward predictions from 2014 with a
+5-session embargo (§6.3), the price-only baseline reaches **AUC 0.594, balanced
+accuracy 0.557, MCC 0.122**; raw accuracy is 0.574 against a 0.549 always-up
+constant. Earlier revisions of this file reported raw accuracy as the headline,
+which the blueprint forbids, and before that a lag-offset bug made the same number
+0.5564. See [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sections 8c, 8e and 8g.
 
 **The design is underpowered on the sign test.** MDE at 80% power is **3.06pp**;
 published daily news-sentiment effects on index direction are 1-2pp. So a null from
@@ -145,6 +148,19 @@ Both documented with evidence in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) sectio
 - **Missing-day convention.** 59% of sessions have no price-report headline. Arms
   carry an explicit `has_sent_*` indicator alongside a 0-fill, so "no headlines" is
   distinguishable from "neutral headlines" and the paired test stays aligned.
+
+### Blueprint conformance
+
+Checked against the v1.1 architecture blueprint; full table in
+[AUDIT_REPORT.md](audit/AUDIT_REPORT.md) section 8g. Fixed: the §6.2 metric set and
+the §6.3 five-session embargo. **The largest remaining gap is §5.2's F1 rung** —
+the ladder is F0 (price) → F1 (+ macro/FX: TND rates, Brent, European index
+returns) → F2 (+ sentiment), and there is no macro or FX data in this repo, so H1
+is currently tested against F0 rather than F1.
+
+Also outstanding: F0 lacks day-of-week and volume change, F2 cannot split FR/AR
+(no Arabic corpus), F3 is not its own rung, no block-bootstrap CIs, no purged
+k-fold diagnostic, no separate COVID-2020 analysis.
 
 Still not implemented: the sentiment model proper (only a TF-IDF baseline exists),
 SHAP, and any reportable H1/H2 result.
@@ -284,7 +300,7 @@ python audit/build_audit.py
 python -m pytest preprocessing
 ```
 
-114 tests, all passing.
+117 tests, all passing.
 
 ## Contributing
 
