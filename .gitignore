@@ -1,9 +1,6 @@
 # data (DVC-tracked; keep the .dvc pointer files in git)
 data/*
 !data/*.dvc
-!data/curated/
-!data/curated/sentiment_gold_annotation1.csv.dvc
-!data/curated/sentiment_gold_annotation1_metadata.json
 
 # regenerable audit DB (rebuild with `python3 audit/build_audit.py`)
 audit/audit.duckdb
@@ -12,3 +9,4 @@ audit/audit.duckdb.wal
 # python
 __pycache__/
 .pytest_cache/
+/data
