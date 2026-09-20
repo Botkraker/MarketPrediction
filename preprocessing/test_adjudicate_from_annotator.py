@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import pytest
 
@@ -38,3 +40,59 @@ def test_create_dataset_rejects_blank_annotation_one(tmp_path):
 
     with pytest.raises(ValueError, match="annotator_1_label"):
         create_dataset(input_path, tmp_path / "output.csv")
+
+def _multi_annotator_frame():
+    return pd.DataFrame({
+        "source": ["ilboursa", "kapitalis", "lapresse"],
+        "annotator_1_label": ["positive", "negative", "positive"],
+        "annotator_2_label": ["positive", "negative", "negative"],
+        "annotator_3_label": ["neutral", "negative", "very_positive"],
+        "adjudicated_label": ["", "", ""],
+        "annotation_status": ["llm_annotated"] * 3,
+    })
+
+
+def test_majority_vote_resolves_and_flags_ties(tmp_path):
+    input_path = tmp_path / "input.csv"
+    _multi_annotator_frame().to_csv(input_path, index=False)
+
+    result = create_dataset(input_path, tmp_path / "out.csv",
+                            tmp_path / "meta.json", method="majority")
+
+    # 2-of-3 wins; the three-way split stays blank rather than being guessed
+    assert result["adjudicated_label"].tolist() == ["positive", "negative", ""]
+    assert result["annotation_status"].tolist() == [
+        "adjudicated_majority", "adjudicated_majority", "adjudicated_tie_unresolved"]
+
+    meta = json.loads((tmp_path / "meta.json").read_text())
+    assert meta["ties_unresolved"] == 1
+    assert meta["provisional"] is False
+
+
+def test_majority_refuses_with_one_annotator(tmp_path):
+    frame = _multi_annotator_frame()
+    frame["annotator_2_label"] = ""
+    frame["annotator_3_label"] = ""
+    input_path = tmp_path / "input.csv"
+    frame.to_csv(input_path, index=False)
+
+    with pytest.raises(ValueError, match="majority needs"):
+        create_dataset(input_path, tmp_path / "out.csv",
+                       tmp_path / "meta.json", method="majority")
+
+
+def test_unresolved_tie_is_rejected_by_split(tmp_path):
+    """A tie must never reach a model: split.py has to refuse the file."""
+    from split import validate_gold_complete
+
+    input_path = tmp_path / "input.csv"
+    _multi_annotator_frame().to_csv(input_path, index=False)
+    result = create_dataset(input_path, tmp_path / "out.csv",
+                            tmp_path / "meta.json", method="majority")
+    result["gold_item_id"] = ["g-0", "g-1", "g-2"]
+    result["row_id"] = ["r-0", "r-1", "r-2"]
+    result["lang"] = ["fr", "fr", "fr"]
+    result["dup_cluster_id"] = ["c-0", "c-1", "c-2"]
+
+    with pytest.raises(ValueError, match="incomplete"):
+        validate_gold_complete(result)
