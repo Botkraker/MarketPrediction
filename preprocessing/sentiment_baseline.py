@@ -105,9 +105,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evaluation", action="store_true",
                         help="spend the frozen evaluation split (do this ONCE)")
+    parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
-    r = run(output_path=args.output, use_evaluation=args.evaluation)
+    r = run(args.gold, args.split, output_path=args.output, use_evaluation=args.evaluation)
 
     print(f"train n={r['train_n']}  majority class = {r['majority_class']}")
     print(f"{'':<12}{'acc':>9}{'floor':>9}{'macroF1':>10}{'QWK':>9}{'kappa':>9}")

@@ -1,8 +1,19 @@
-"""Annotate the sentiment gold CSV with a local LM Studio model."""
+"""Annotate the sentiment gold CSV with an LLM.
+
+Two transports: LM Studio's native local endpoint (default) and any
+OpenAI-compatible chat API (`--api openai`), e.g. NVIDIA NIM. A hosted model is
+not free of consequences for this project: the blueprint's reproducibility
+contract (section 8.4) pins scorer versions, and a hosted model can change under
+a fixed name, so `--api openai` sends temperature 0 and records the model id per
+row. Its key is read from an environment variable named by --api-key-env and is
+never written to the CSV or to metadata.
+"""
 
 import argparse
 import json
+import os
 import re
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -14,6 +25,21 @@ from gold import DEFAULT_OUTPUT, LABELS
 DEFAULT_ENDPOINT = "http://localhost:1234/api/v1/chat"
 DEFAULT_MODEL = "qwen2.5-7b-instruct-1m"
 ANNOTATION_ATTEMPTS = 3
+DEFAULT_API = "lmstudio"
+
+
+class AnnotationTimeout(ValueError):
+    """One request took too long. A row-level failure, not a dead server --
+    ValueError so annotate_file skips the row and keeps going."""
+
+
+def _is_timeout(error: BaseException) -> bool:
+    """urlopen surfaces a socket timeout as TimeoutError, or wrapped in
+    URLError.reason, depending on where it fires."""
+    if isinstance(error, TimeoutError):
+        return True
+    reason = getattr(error, "reason", None)
+    return isinstance(reason, TimeoutError) or "timed out" in str(reason or error).lower()
 
 
 
@@ -86,10 +112,54 @@ DEFAULT_PROMPT_VERSION = "v2"
 
 
 def _response_text(response: dict) -> str:
+    """Message content from either dialect: LM Studio's native `output[0].content`
+    or an OpenAI-compatible `choices[0].message.content`."""
     try:
         return response["output"][0]["content"]
+    except (KeyError, IndexError, TypeError):
+        pass
+    try:
+        message = response["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as error:
-        raise ValueError("LM Studio response did not contain message content") from error
+        raise ValueError("Response did not contain message content") from error
+    # Only `content` is the answer. Reasoning models also return
+    # `reasoning_content`, which is deliberately ignored: a chain of thought
+    # weighs several labels before choosing, so parsing it could return one the
+    # model rejected. Empty content (reasoning ran out of tokens) is a retry.
+    text = message.get("content")
+    if isinstance(text, str) and text.strip():
+        return text
+    raise ValueError("Response did not contain message content")
+
+
+def _build_payload(api: str, model: str, system_prompt: str, user_prompt: str) -> dict:
+    if api == "lmstudio":
+        return {"model": model, "system_prompt": system_prompt, "input": user_prompt}
+    if api == "openai":
+        # temperature 0: a hosted model cannot be pinned by revision hash the way a
+        # local GGUF can, so determinism is the only reproducibility lever available.
+        return {
+            "model": model,
+            "messages": [{"role": "system", "content": system_prompt},
+                         {"role": "user", "content": user_prompt}],
+            "temperature": 0,
+            # Reasoning models spend tokens thinking before they answer; a tight
+            # cap truncates the reasoning and leaves `content` empty.
+            "max_tokens": 2048,
+        }
+    raise ValueError(f"Unknown api {api!r}; use 'lmstudio' or 'openai'")
+
+
+def _auth_header(api_key_env: str | None) -> dict[str, str]:
+    """Read the bearer token from the environment. The key is never a CLI
+    argument, never written to the annotation CSV and never put in metadata."""
+    if not api_key_env:
+        return {}
+    key = os.environ.get(api_key_env, "").strip()
+    if not key:
+        raise RuntimeError(
+            f"Environment variable {api_key_env} is empty; export the API key first")
+    return {"Authorization": f"Bearer {key}"}
 
 
 def _parse_pseudo_annotation(content: str) -> dict[str, str] | None:
@@ -107,6 +177,32 @@ def _parse_pseudo_annotation(content: str) -> dict[str, str] | None:
     return match.groupdict() if match else None
 
 
+# Longest label first so "very_negative" is never read as "negative".
+_BARE_LABEL = re.compile(
+    r'^\s*["\']?(?P<label>' + "|".join(sorted(LABELS, key=len, reverse=True))
+    + r')\b["\']?\s*[:,;|\-]?\s*(?P<reason>\S.*)$',
+    flags=re.DOTALL,
+)
+
+
+_KEY_VALUE = re.compile(
+    r'^\s*label\s*[:=]\s*["\']?(?P<label>' + "|".join(sorted(LABELS, key=len, reverse=True))
+    + r')\b["\']?\s*[,;\n]\s*reason\s*[:=]\s*(?P<reason>\S.*)$',
+    flags=re.DOTALL | re.IGNORECASE,
+)
+
+
+def _parse_bare_label(content: str) -> dict[str, str] | None:
+    """Two non-JSON dialects qwen2.5-7b falls into under PROMPT_V2:
+      `neutral meeting discussed cooperation`       (bare label, then reason)
+      `label: negative\\nreason: index decline ...`  (unquoted key-value lines)
+    Accepted only when the label is an exact label token in the leading position."""
+    match = _KEY_VALUE.match(content) or _BARE_LABEL.match(content)
+    if not match:
+        return None
+    return {"label": match["label"].lower(), "reason": match["reason"].strip()}
+
+
 def _parse_annotation(content: str) -> tuple[str, str]:
     content = content.strip()
     try:
@@ -114,7 +210,7 @@ def _parse_annotation(content: str) -> tuple[str, str]:
     except json.JSONDecodeError as error:
         object_start = content.find("{")
         if object_start < 0:
-            result = _parse_pseudo_annotation(content)
+            result = _parse_pseudo_annotation(content) or _parse_bare_label(content)
             if result is None:
                 raise ValueError(f"Model returned invalid JSON: {content!r}") from error
             object_start = None
@@ -140,6 +236,26 @@ def _parse_annotation(content: str) -> tuple[str, str]:
     return label, reason.strip()
 
 
+# Transient on a shared hosted tier (rate limit, overload, gateway). Backed off
+# and retried; any other HTTP status (401 bad key, 404 model not on this account)
+# is a configuration error and aborts.
+TRANSIENT_HTTP = {429, 500, 502, 503, 504}
+BACKOFF_SECONDS = (2, 5, 15, 30, 60)
+
+
+def _post_with_backoff(request: Request, timeout: int, sleep=time.sleep) -> dict:
+    for delay in (*BACKOFF_SECONDS, None):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            if error.code not in TRANSIENT_HTTP or delay is None:
+                raise
+            retry_after = error.headers.get("Retry-After") if error.headers else None
+            sleep(float(retry_after) if retry_after and retry_after.isdigit() else delay)
+    raise AssertionError("unreachable")
+
+
 def annotate_headline(
     headline: str,
     lang: str,
@@ -148,8 +264,10 @@ def annotate_headline(
     model: str = DEFAULT_MODEL,
     timeout: int = 120,
     prompt_version: str = DEFAULT_PROMPT_VERSION,
+    api: str = DEFAULT_API,
+    api_key_env: str | None = None,
 ) -> tuple[str, str]:
-    """Ask LM Studio for one sentiment label and a concise explanation."""
+    """Ask one model for a sentiment label and a concise explanation."""
     if prompt_version not in PROMPTS:
         raise ValueError(f"Unknown prompt_version {prompt_version!r}; have {sorted(PROMPTS)}")
     system_prompt = PROMPTS[prompt_version]
@@ -161,31 +279,36 @@ def annotate_headline(
         },
         ensure_ascii=False,
     )
+    headers = {"Content-Type": "application/json", **_auth_header(api_key_env)}
     last_error: ValueError | None = None
     for _ in range(ANNOTATION_ATTEMPTS):
-        payload = {
-            "model": model,
-            "system_prompt": system_prompt,
-            "input": user_prompt,
-        }
+        payload = _build_payload(api, model, system_prompt, user_prompt)
         request = Request(
             endpoint,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:
-            with urlopen(request, timeout=timeout) as response:
-                result = json.loads(response.read().decode("utf-8"))
+            result = _post_with_backoff(request, timeout)
         except (HTTPError, URLError, TimeoutError) as error:
-            raise RuntimeError(f"Could not reach LM Studio at {endpoint}: {error}") from error
+            # A timeout is a property of THIS row, not of the server: ministral-8b
+            # occasionally runs away on one headline and never closes the reply.
+            # Retry it like any bad response, and let annotate_file mark the row
+            # llm_failed if every attempt times out. A refused connection or an
+            # HTTP error means the server is gone, and that still aborts the run.
+            if _is_timeout(error):
+                last_error = AnnotationTimeout(
+                    f"request timed out after {timeout}s")
+                continue
+            raise RuntimeError(f"Could not reach {endpoint}: {error}") from error
         try:
             return _parse_annotation(_response_text(result))
         except ValueError as error:
             last_error = error
 
     raise ValueError(
-        f"LM Studio returned invalid annotation after {ANNOTATION_ATTEMPTS} attempts"
+        f"{model} returned invalid annotation after {ANNOTATION_ATTEMPTS} attempts"
     ) from last_error
 
 
@@ -209,6 +332,8 @@ def annotate_file(
     timeout: int = 120,
     annotator: int = 1,
     prompt_version: str = DEFAULT_PROMPT_VERSION,
+    api: str = DEFAULT_API,
+    api_key_env: str | None = None,
 ) -> pd.DataFrame:
     """Annotate blank rows and persist after every successful row.
 
@@ -233,11 +358,19 @@ def annotate_file(
     for index, row in df.iterrows():
         if row[label_col] and row[notes_col]:
             continue
-        label, reason = annotate_headline(
-            row["headline_clean"], row["lang"], row["relevance_tag"],
-            endpoint=endpoint, model=model, timeout=timeout,
-            prompt_version=prompt_version,
-        )
+        try:
+            label, reason = annotate_headline(
+                row["headline_clean"], row["lang"], row["relevance_tag"],
+                endpoint=endpoint, model=model, timeout=timeout,
+                prompt_version=prompt_version, api=api, api_key_env=api_key_env,
+            )
+        except ValueError:
+            # One unparseable row must not abort a 1,000-row run. The label stays
+            # blank, so a re-run retries it, and the failure is counted rather
+            # than hidden. RuntimeError (server unreachable) still aborts.
+            df.at[index, "annotation_status"] = "llm_failed"
+            df.to_csv(output_path, index=False)
+            continue
         df.at[index, label_col] = label
         df.at[index, notes_col] = reason
         # Which model produced this label travels with the data -- an agreement
@@ -260,15 +393,24 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--annotator", type=int, default=1,
                         help="which annotator_N_* columns to write (default 1)")
+    parser.add_argument("--api", choices=("lmstudio", "openai"), default=DEFAULT_API,
+                        help="request dialect: LM Studio native, or OpenAI-compatible")
+    parser.add_argument("--api-key-env", default=None,
+                        help="environment variable holding the bearer token "
+                             "(the key itself is never a CLI argument)")
     parser.add_argument("--prompt-version", choices=sorted(PROMPTS),
                         default=DEFAULT_PROMPT_VERSION,
                         help="v1 produced the original 3,000 labels; v2 defines the task")
     args = parser.parse_args()
     result = annotate_file(args.input, args.output, args.endpoint, args.model,
-                           args.timeout, args.annotator, args.prompt_version)
+                           args.timeout, args.annotator, args.prompt_version,
+                           args.api, args.api_key_env)
     label_col, _, _ = annotator_columns(args.annotator)
     print(f"Annotated {result[label_col].ne('').sum()} of {len(result)} rows "
           f"as {label_col} using {args.model} (prompt {args.prompt_version})")
+    failed = int((result[label_col].eq("") & result["annotation_status"].eq("llm_failed")).sum())
+    if failed:
+        print(f"{failed} rows failed to parse after retries; re-run to retry them")
 
 
 if __name__ == "__main__":
