@@ -861,6 +861,149 @@ analysis, Diebold-Mariano test, wrong-country provenance check or parameter
 sensitivity grid appears in the blueprint. Each came out of the audit or the
 adversarial review, and several caught real defects the blueprint would not have.
 
+## 8h. Gold set v2: relabelling under PROMPT_V2, double-annotated, human-anchored (2026-09-22)
+
+§8d and §8f left the gold set as 2,932 single-annotator v1 labels, and §8e showed that
+v1-derived sentiment makes the return forecast worse. Blueprint §4.3 puts the gold set
+on the critical path: ~600–1,000 sentences, double-annotated, Cohen's κ ≥ 0.6. This
+section records that relabel.
+
+**Correction to §8f.** §8f says the local LM Studio server "turns out not to be installed
+on this machine at all". It is installed (`~/.lmstudio`), with the server on
+`localhost:1234`. Both local annotators below ran on it.
+
+### Sample (`gold_v2.py`)
+
+1,000 headlines drawn from the in-study v1 gold set, stratified by source × year
+(≥ 1 per non-empty stratum). The **headlines** are reused and the v1 **labels** are not,
+so v1 and v2 can be compared item by item. Exclusions:
+
+| excluded | rows | why |
+|---|---:|---|
+| not in study | 68 | wrong-country Assabah (§6b) |
+| annotation pilot | 60 | already labelled under v2 by Claude, so not blind |
+| **PROMPT_V2 worked examples** | **2** | both were in the gold set, both v1-labelled `positive`, and v2 teaches `neutral` for both: the prompt had been handed the answer to items it would be scored on |
+
+The old v1 labels go to a separate file (`sentiment_gold_v2_v1labels.csv`) so a human
+annotator never sees them.
+
+### The prompt effect, isolated
+
+§8f's pilot confounded prompt with model (qwen under v1 vs Claude under v2). Here the
+**same model** (qwen2.5-7b) labels the **same 1,000 headlines** under each prompt:
+
+| label | v1 | v2 |
+|---|---:|---:|
+| very_negative | 2.3% | 1.0% |
+| negative | 22.8% | 13.8% |
+| **neutral** | **8.2%** | **54.1%** |
+| **positive** | **61.0%** | **31.0%** |
+| very_positive | 5.7% | 0.1% |
+
+47% of items keep their label. Almost all movement is toward neutral (positive → neutral
+339, negative → neutral 103); **9 of 1,000 change sign**. The prompt, not the model, was
+the main source of §8d's bias.
+
+### Annotators and agreement
+
+| annotator | model | family |
+|---|---|---|
+| 1 | qwen2.5-7b-instruct-1m (local) | Qwen |
+| 2 | ministral-8b-instruct-2410 (local) | Mistral |
+| 3 | human, 150-row blind subset (Excel workbook, labels hidden) | — |
+
+| pair | n | raw | **quadratic κ** | nominal κ |
+|---|---:|---:|---:|---:|
+| qwen vs ministral | 1,000 | 71.6% | **0.577** | 0.460 |
+| qwen vs human | 150 | 71.3% | **0.689** | 0.545 |
+| ministral vs human | 150 | 71.3% | **0.571** | 0.463 |
+| *v1 qwen vs human* | 150 | 40.7% | *0.548* | *0.242* |
+| Fleiss, all three | 150 | — | — | 0.486 |
+
+**The blueprint's gate is not met by the two model annotators:** 0.577 against a 0.6
+target. Only qwen-vs-human clears it.
+
+The disagreement has one shape. 89% of qwen/ministral disagreements are ministral
+answering `neutral` where qwen chose a direction. Neither model is systematically right:
+on the 47 anchor rows where they disagree, **the human sided with qwen 22 times, with
+ministral 22 times, and with neither 3 times**. The human's label mix (57% neutral, 23%
+negative, 19% positive) sits between qwen (46% neutral, 34% positive) and ministral
+(72% neutral).
+
+### A stronger third annotator was tested and dropped
+
+NVIDIA's hosted `nemotron-3-super-120b-a12b` (a third family) labelled 616 rows before
+the run was stopped by the project owner's decision. Against the human it scored
+**quadratic κ 0.829** (n = 83 overlapping rows), and the three-model majority scored
+0.835. Its labels are kept in `sentiment_gold_v2_nemotron_partial.csv` for the record but
+**do not vote**. That is a deliberate trade: the strongest agreement evidence in this
+section was set aside for a fully local, reproducible annotator pair. A hosted model can
+also change under a fixed name, which the reproducibility contract (§8.4) cannot pin.
+
+### Adjudication and split
+
+| source of the final label | rows |
+|---|---:|
+| human label (the 150 anchor rows, decides outright) | 150 |
+| qwen and ministral agree | 613 |
+| **tie broken by qwen** | **237** |
+
+The qwen tiebreak is a **decision, not a measurement**. The metadata records the
+reasoning: qwen agrees with the human more overall (0.689 vs 0.571), but on disagreement
+rows specifically the human split 22/22, so on the 237 tie rows this rule is no better
+than chance at matching the human. It also tilts training toward `positive`: **train is
+30% positive, the human evaluation set is 19%.**
+
+The **evaluation split is the human's 150 rows** (`split.py --evaluation-from-annotator 3`),
+labelled with the human's labels, so any classifier is graded against human judgment
+rather than against LLM labels it was trained to imitate. Train 699, validation 151.
+
+### First classifier on v2 labels (validation only; evaluation not yet spent)
+
+| | v1 labels | v2 labels |
+|---|---:|---:|
+| training rows | 1,514 | 699 |
+| QWK | 0.4715 | 0.3724 |
+| accuracy | 0.6059 | 0.6424 |
+| majority floor | 0.5900 (`positive`) | 0.5497 (`neutral`) |
+| **margin over floor** | **+1.6 pp** | **+9.3 pp** |
+
+The lower QWK is not a regression, and the columns are not directly comparable. v1's
+labels tracked surface vocabulary, which character n-grams imitate easily; v2 asks for
+market impact. The v2 model clears its floor by six times the v1 margin, on half the data.
+The scale is effectively three-class: 1 `very_positive` and 7 `very_negative` training
+rows, F1 = 0 for both. On the three populated classes F1 averages 0.60. Train accuracy
+0.92 against 0.64 on validation: it overfits at 699 rows.
+
+### Coverage cost, and the extension
+
+With 1,000 gold rows, `score_corpus.py --mode expanding` would leave an estimated
+26–33% of the corpus unscored and push the first scorable year from 2016 to 2018–19,
+shortening the H1 window. The remaining **1,930** in-study headlines
+(`sentiment_gold_v2_ext.csv`) are being labelled by both local annotators under v2. They
+add training volume and early coverage; they carry no human anchor.
+
+### Pipeline robustness fixes found on the way
+
+`llm_annotate.py` aborted a 1,000-row run on the first unparseable reply, and qwen under
+v2 emits two non-JSON dialects (a bare label, and unquoted `label:`/`reason:` lines); one
+ministral request also hung past the timeout. Now: both dialects parse (exact label token
+required); a row that fails every attempt is marked `llm_failed` and retried next run; a
+timeout fails the row, not the run; hosted 429/5xx back off and retry, while a refused
+connection, 401 or 404 still aborts. An OpenAI-compatible transport was added; its key is
+read from an environment variable and never written to data. `agreement.py` now computes
+each pairwise κ on that pair's overlap, so a partial human column cannot shrink the
+model-vs-model statistic.
+
+### What this does NOT establish
+
+- **One human.** The anchor measures model-vs-human agreement, not human-vs-human
+  reliability. A second person on even 50 rows would close that.
+- **The rubric's author is still Claude.** No Claude label enters v2 (the §8f conflict of
+  interest for the annotation itself is gone), but PROMPT_V2 is Claude's text, and all
+  annotators, human included, worked from it.
+- **The 237 tiebreak rows** are qwen's reading, not an adjudication.
+
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):

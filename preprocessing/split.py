@@ -67,7 +67,8 @@ def _assign_stratified(frame: pd.DataFrame, seed: int, evaluation_fraction: floa
             group.index,
             key=lambda index: _stable_hash(str(frame.at[index, "gold_item_id"]), seed),
         )
-        evaluation_count = max(1, round(len(ordered) * evaluation_fraction))
+        evaluation_count = (max(1, round(len(ordered) * evaluation_fraction))
+                            if evaluation_fraction > 0 else 0)
         validation_count = max(1, round(len(ordered) * validation_fraction))
         if evaluation_count + validation_count >= len(ordered):
             validation_count = max(0, len(ordered) - evaluation_count - 1)
@@ -84,11 +85,20 @@ def build_split(
     seed: int = 20260919,
     evaluation_fraction: float = 1 / 3,
     validation_fraction: float = 0.15,
+    evaluation_from_annotator: int | None = None,
 ) -> pd.DataFrame:
-    """Write a deterministic split manifest without changing gold labels."""
-    if not 0 < evaluation_fraction < 1:
+    """Write a deterministic split manifest without changing gold labels.
+
+    With `evaluation_from_annotator=N`, the evaluation split is exactly the rows
+    annotator N labelled (the human anchor) instead of a hashed random third, and
+    those rows must carry annotator N's label as adjudicated_label -- a model
+    graded against the human is graded against the human's label or not at all.
+    The remaining rows are split train/validation as usual, and
+    `validation_fraction` stays a fraction of the WHOLE gold set.
+    """
+    if evaluation_from_annotator is None and not 0 < evaluation_fraction < 1:
         raise ValueError("evaluation_fraction must be between 0 and 1")
-    if not 0 <= validation_fraction < 1 - evaluation_fraction:
+    if not 0 <= validation_fraction < 1 - (0 if evaluation_from_annotator else evaluation_fraction):
         raise ValueError("validation_fraction leaves no training data")
 
     frame = pd.read_csv(input_path, keep_default_na=False)
@@ -101,9 +111,27 @@ def build_split(
         frame = frame[keep].reset_index(drop=True)
     validate_gold_complete(frame)
     frame = frame.copy()
-    frame["split"] = _assign_stratified(
-        frame, seed, evaluation_fraction, validation_fraction
-    )
+    if evaluation_from_annotator is None:
+        frame["split"] = _assign_stratified(
+            frame, seed, evaluation_fraction, validation_fraction
+        )
+    else:
+        column = f"annotator_{evaluation_from_annotator}_label"
+        if column not in frame.columns:
+            raise ValueError(f"{column} not found; cannot build the evaluation set from it")
+        is_eval = frame[column].astype(str).str.strip().ne("")
+        if not is_eval.any():
+            raise ValueError(f"{column} is empty; cannot build the evaluation set from it")
+        mismatch = is_eval & frame[column].ne(frame["adjudicated_label"])
+        if mismatch.any():
+            raise ValueError(
+                f"{int(mismatch.sum())} evaluation rows have adjudicated_label != {column}; "
+                f"adjudicate with --human-annotator {evaluation_from_annotator} first")
+        rest = frame[~is_eval]
+        relative = validation_fraction * len(frame) / len(rest)
+        frame["split"] = "evaluation"
+        frame.loc[~is_eval, "split"] = _assign_stratified(rest, seed, 0.0, relative)
+        evaluation_fraction = round(float(is_eval.mean()), 4)
     if frame["split"].isna().any():
         raise ValueError("Could not assign every gold row to a split")
     cluster_splits = frame.groupby("dup_cluster_id")["split"].nunique()
@@ -122,6 +150,8 @@ def build_split(
         "rows_excluded_not_in_study": excluded,
         "rows_split": len(result),
         "evaluation_fraction": evaluation_fraction,
+        "evaluation_source": (f"annotator_{evaluation_from_annotator}_label (fixed rows)"
+                              if evaluation_from_annotator else "stratified hash"),
         "validation_fraction_of_total": validation_fraction,
         "split_counts": result["split"].value_counts().reindex(SPLITS, fill_value=0).astype(int).to_dict(),
         "language_counts": result.groupby(["split", "lang"]).size().unstack(fill_value=0).to_dict(),
@@ -138,8 +168,12 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--metadata", type=Path, default=DEFAULT_METADATA)
     parser.add_argument("--seed", type=int, default=20260919)
+    parser.add_argument("--evaluation-from-annotator", type=int, default=None,
+                        help="use exactly the rows annotator N labelled (the human "
+                             "anchor) as the evaluation split")
     args = parser.parse_args()
-    result = build_split(args.input, args.output, args.metadata, args.seed)
+    result = build_split(args.input, args.output, args.metadata, args.seed,
+                         evaluation_from_annotator=args.evaluation_from_annotator)
     print(result["split"].value_counts().reindex(SPLITS, fill_value=0).to_string())
 
 

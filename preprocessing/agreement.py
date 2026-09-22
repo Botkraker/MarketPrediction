@@ -90,14 +90,23 @@ def compute(input_path: Path = DEFAULT_INPUT,
 
     pairwise = []
     for a, b in combinations(columns, 2):
-        linear = cohen_kappa_score(complete[a], complete[b], labels=LABELS,
+        # Pairwise kappa uses every row THIS PAIR both labelled, not only rows
+        # every annotator labelled. A human anchor covering a subset would
+        # otherwise shrink the model-vs-model kappa to the anchor's size.
+        both = frame[labelled[a] & labelled[b]]
+        if both.empty:
+            pairwise.append({"pair": f"{a} vs {b}", "rows_compared": 0,
+                             "note": "no row labelled by both"})
+            continue
+        linear = cohen_kappa_score(both[a], both[b], labels=LABELS,
                                    weights="linear")
-        quadratic = cohen_kappa_score(complete[a], complete[b], labels=LABELS,
+        quadratic = cohen_kappa_score(both[a], both[b], labels=LABELS,
                                       weights="quadratic")
-        nominal = cohen_kappa_score(complete[a], complete[b], labels=LABELS)
+        nominal = cohen_kappa_score(both[a], both[b], labels=LABELS)
         pairwise.append({
             "pair": f"{a} vs {b}",
-            "raw_agreement": round(float((complete[a] == complete[b]).mean()), 4),
+            "rows_compared": int(len(both)),
+            "raw_agreement": round(float((both[a] == both[b]).mean()), 4),
             "cohen_kappa_nominal": round(float(nominal), 4),
             "cohen_kappa_linear": round(float(linear), 4),
             "cohen_kappa_quadratic": round(float(quadratic), 4),

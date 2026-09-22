@@ -96,3 +96,43 @@ def test_unresolved_tie_is_rejected_by_split(tmp_path):
 
     with pytest.raises(ValueError, match="incomplete"):
         validate_gold_complete(result)
+
+
+def _two_models_and_human():
+    return pd.DataFrame({
+        "source": ["ilboursa"] * 4,
+        "annotator_1_label": ["positive", "negative", "positive", "neutral"],
+        "annotator_2_label": ["positive", "neutral", "neutral", "positive"],
+        "annotator_3_label": ["", "", "", "negative"],
+        "adjudicated_label": [""] * 4,
+        "annotation_status": ["llm_annotated"] * 4,
+    })
+
+
+def test_human_decides_its_rows_and_tiebreak_resolves_the_rest(tmp_path):
+    input_path = tmp_path / "input.csv"
+    _two_models_and_human().to_csv(input_path, index=False)
+
+    result = create_dataset(input_path, tmp_path / "out.csv", tmp_path / "meta.json",
+                            method="majority", human_annotator=3, tiebreak=1,
+                            tiebreak_note="qwen preferred")
+
+    # row 0 agreement; rows 1-2 model ties -> annotator 1; row 3 human overrides both
+    assert result["adjudicated_label"].tolist() == ["positive", "negative", "positive", "negative"]
+    assert result["annotation_status"].tolist() == [
+        "adjudicated_majority", "adjudicated_tiebreak_annotator_1",
+        "adjudicated_tiebreak_annotator_1", "adjudicated_human_3"]
+    meta = json.loads((tmp_path / "meta.json").read_text())
+    assert meta["ties_unresolved"] == 0
+    assert meta["tiebreak_note"] == "qwen preferred"
+    assert meta["status_counts"]["adjudicated_tiebreak_annotator_1"] == 2
+
+
+def test_without_tiebreak_model_ties_stay_blank_even_with_a_human(tmp_path):
+    input_path = tmp_path / "input.csv"
+    _two_models_and_human().to_csv(input_path, index=False)
+
+    result = create_dataset(input_path, tmp_path / "out.csv", tmp_path / "meta.json",
+                            method="majority", human_annotator=3)
+
+    assert result["adjudicated_label"].tolist() == ["positive", "", "", "negative"]
