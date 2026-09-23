@@ -9,6 +9,8 @@ Every variant is scored on the same held-out rows with the same metrics:
   tfidf               the existing char-ngram baseline (sentiment_baseline.py)
   finbert_zero_shot   FinBERT's own head, no Tunisian training (reference only)
   finbert_head_*      the trained probe, one per embedding cache passed in
+  ensemble_tfidf_finbert_*  equal-weight average of tfidf and that head's
+                      class probabilities (no tuned weight)
 
 The frozen `evaluation` split -- the human anchor's 150 rows -- is not touched
 unless --evaluation is given. Spend it once, on the variant that wins here.
@@ -75,6 +77,14 @@ def fit_head(x_train, y_train, labels: list[str]):
         round(float(search.best_score_), 4)
 
 
+def average_proba(models, inputs) -> np.ndarray:
+    """Mean of predict_proba across models that share one class order."""
+    orders = {tuple(m.classes_) for m in models}
+    if len(orders) != 1:
+        raise ValueError(f"models disagree on class order: {orders}")
+    return np.mean([m.predict_proba(x) for m, x in zip(models, inputs)], axis=0)
+
+
 def zero_shot_labels(probs: np.ndarray, zs_order: list[str]) -> np.ndarray:
     """FinBERT's own argmax. Its labels (positive/negative/neutral) are already
     valid names at both 3 and 5 classes; it simply never predicts very_*."""
@@ -114,6 +124,12 @@ def run(gold_path: Path = DEFAULT_GOLD, split_path: Path = DEFAULT_SPLIT,
                       "translator_revision": meta.get("translator_revision")})
         results["variants"][f"finbert_head_{tag}"] = entry
 
+        # Equal-weight average of the two probability vectors. No weight is
+        # tuned, so validation stays an honest estimate for this variant too.
+        probs = average_proba([tfidf, head], [frame.loc[held, "headline_clean"], x[held]])
+        results["variants"][f"ensemble_tfidf_finbert_{tag}"] = score(
+            y[held], np.array(tfidf.classes_)[probs.argmax(axis=1)], majority, labels)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     return results
@@ -134,10 +150,10 @@ def main() -> None:
     r = run(args.gold, args.split, args.embeddings, args.output, args.classes, args.evaluation)
     print(f"{r['held_out_split']} n={r['held_out_n']}  train n={r['train_n']}  "
           f"classes={r['classes']}  floor={r['majority_class']}")
-    print(f"{'variant':<28}{'QWK':>8}{'macroF1':>9}{'acc':>8}{'floor':>8}   notes")
+    print(f"{'variant':<36}{'QWK':>8}{'macroF1':>9}{'acc':>8}{'floor':>8}   notes")
     for name, s in r["variants"].items():
         note = f"C={s['C']} cv_qwk={s['cv_qwk_on_train']}" if "C" in s else ""
-        print(f"{name:<28}{s['qwk_ordinal']:>8.4f}{s['macro_f1']:>9.4f}"
+        print(f"{name:<36}{s['qwk_ordinal']:>8.4f}{s['macro_f1']:>9.4f}"
               f"{s['accuracy']:>8.4f}{s['majority_floor']:>8.4f}   {note}")
 
 

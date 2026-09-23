@@ -80,7 +80,8 @@ def test_head_learns_separable_embeddings_and_reports_every_variant(tmp_path):
 
     assert result["held_out_split"] == "validation" and result["held_out_n"] == 15
     variants = result["variants"]
-    assert set(variants) == {"tfidf", "finbert_zero_shot_raw", "finbert_head_raw"}
+    assert set(variants) == {"tfidf", "finbert_zero_shot_raw", "finbert_head_raw",
+                            "ensemble_tfidf_finbert_raw"}
     assert variants["finbert_head_raw"]["accuracy"] == 1.0
     assert variants["finbert_zero_shot_raw"]["accuracy"] == pytest.approx(1 / 3, abs=0.01)
     assert json.loads((tmp_path / "r.json").read_text())["classes"] == 3
