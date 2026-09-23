@@ -60,23 +60,39 @@ def build_model() -> object:
     )
 
 
-def score(y_true, y_pred, majority: str) -> dict:
+# The five-point scale is effectively three-point in the v2 labels: very_positive
+# and very_negative are a few rows each (AUDIT_REPORT 8h), so a five-class model
+# scores F1 = 0 on both and the macro average measures their absence, not skill.
+# score_corpus.py's monotonicity_check recommends the same collapse.
+LABELS_3 = ["negative", "neutral", "positive"]
+COLLAPSE_3 = {"very_negative": "negative", "negative": "negative", "neutral": "neutral",
+              "positive": "positive", "very_positive": "positive"}
+
+
+def score(y_true, y_pred, majority: str, labels: list[str] = LABELS) -> dict:
     return {
         "n": int(len(y_true)),
         "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
         "majority_floor": round(float((y_true == majority).mean()), 4),
         "macro_f1": round(float(f1_score(y_true, y_pred, average="macro",
-                                         labels=LABELS, zero_division=0)), 4),
-        "qwk_ordinal": round(float(cohen_kappa_score(y_true, y_pred, labels=LABELS,
+                                         labels=labels, zero_division=0)), 4),
+        "qwk_ordinal": round(float(cohen_kappa_score(y_true, y_pred, labels=labels,
                                                      weights="quadratic")), 4),
         "kappa_nominal": round(float(cohen_kappa_score(y_true, y_pred,
-                                                       labels=LABELS)), 4),
+                                                       labels=labels)), 4),
     }
 
 
 def run(gold_path: Path = DEFAULT_GOLD, split_path: Path = DEFAULT_SPLIT,
-        output_path: Path = DEFAULT_OUTPUT, use_evaluation: bool = False) -> dict:
+        output_path: Path = DEFAULT_OUTPUT, use_evaluation: bool = False,
+        classes: int = 5) -> dict:
+    if classes not in (3, 5):
+        raise ValueError("classes must be 3 or 5")
     frame = load(gold_path, split_path)
+    labels = LABELS
+    if classes == 3:
+        frame = frame.assign(adjudicated_label=frame.adjudicated_label.map(COLLAPSE_3))
+        labels = LABELS_3
     train = frame[frame.split == "train"]
     held = frame[frame.split == ("evaluation" if use_evaluation else "validation")]
 
@@ -86,15 +102,16 @@ def run(gold_path: Path = DEFAULT_GOLD, split_path: Path = DEFAULT_SPLIT,
 
     results = {
         "held_out_split": "evaluation" if use_evaluation else "validation",
+        "classes": classes,
         "train_n": int(len(train)),
         "majority_class": majority,
         "train": score(train.adjudicated_label,
-                       model.predict(train.headline_clean), majority),
+                       model.predict(train.headline_clean), majority, labels),
         "held_out": score(held.adjudicated_label,
-                          model.predict(held.headline_clean), majority),
+                          model.predict(held.headline_clean), majority, labels),
         "per_class": classification_report(
             held.adjudicated_label, model.predict(held.headline_clean),
-            labels=LABELS, output_dict=True, zero_division=0),
+            labels=labels, output_dict=True, zero_division=0),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -108,8 +125,11 @@ def main() -> None:
     parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
     parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--classes", type=int, choices=(3, 5), default=5,
+                        help="3 collapses very_* into their neighbours")
     args = parser.parse_args()
-    r = run(args.gold, args.split, output_path=args.output, use_evaluation=args.evaluation)
+    r = run(args.gold, args.split, output_path=args.output, use_evaluation=args.evaluation,
+            classes=args.classes)
 
     print(f"train n={r['train_n']}  majority class = {r['majority_class']}")
     print(f"{'':<12}{'acc':>9}{'floor':>9}{'macroF1':>10}{'QWK':>9}{'kappa':>9}")
@@ -120,7 +140,7 @@ def main() -> None:
         print(f"{tag:<12}{s['accuracy']:>9.4f}{s['majority_floor']:>9.4f}"
               f"{s['macro_f1']:>10.4f}{s['qwk_ordinal']:>9.4f}{s['kappa_nominal']:>9.4f}")
     print("\nper-class F1 on held-out:")
-    for label in LABELS:
+    for label in (LABELS_3 if r["classes"] == 3 else LABELS):
         d = r["per_class"][label]
         print(f"  {label:<15} f1={d['f1-score']:.3f}  support={int(d['support'])}")
 

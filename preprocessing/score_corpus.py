@@ -36,7 +36,7 @@ from pathlib import Path
 import pandas as pd
 
 from gold import LABELS
-from sentiment_baseline import build_model
+from sentiment_baseline import COLLAPSE_3, LABELS_3, build_model
 
 ROOT = Path(__file__).resolve().parent.parent
 CURATED = ROOT / "data" / "curated"
@@ -77,6 +77,19 @@ def monotonicity_check(labelled: pd.DataFrame) -> dict:
                      "consider collapsing to 3 classes, which loses nothing measurable.")}
 
 
+def _provenance_warning(versions: list[str]) -> str:
+    """The caveat must describe the labels actually used, not the ones this file
+    was first written for."""
+    if any(v.startswith("v1") for v in versions):
+        return ("Labels derive from a single 7B annotator under PROMPT_V1, which did "
+                "not define the task (AUDIT_REPORT 8d). These scores are a pipeline "
+                "demonstration, NOT a sentiment measurement.")
+    return ("Labels are PROMPT_V2, two local annotators (qwen2.5-7b, ministral-8b) "
+            "with a 150-row human anchor; qwen breaks model ties, which decides ~28% "
+            "of rows (AUDIT_REPORT 8h). Grade the classifier against the human "
+            "evaluation split before treating these scores as a measurement.")
+
+
 def _fit(train: pd.DataFrame):
     return build_model().fit(train.headline_clean, train.adjudicated_label)
 
@@ -84,12 +97,16 @@ def _fit(train: pd.DataFrame):
 def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         split_path: Path = DEFAULT_SPLIT, output_path: Path = DEFAULT_OUTPUT,
         metadata_path: Path = DEFAULT_METADATA, mode: str = "expanding",
-        min_train: int = 200, freq: str = "YS") -> pd.DataFrame:
+        min_train: int = 200, freq: str = "YS", classes: int = 5) -> pd.DataFrame:
     if mode not in ("expanding", "static"):
         raise ValueError("mode must be 'expanding' or 'static'")
+    if classes not in (3, 5):
+        raise ValueError("classes must be 3 or 5")
     gold = pd.read_csv(gold_path, keep_default_na=False)
     split = pd.read_csv(split_path)[["gold_item_id", "split"]]
     labelled = gold.merge(split, on="gold_item_id", how="inner")
+    if classes == 3:
+        labelled["adjudicated_label"] = labelled["adjudicated_label"].map(COLLAPSE_3)
     labelled["day"] = pd.to_datetime(labelled.published_date, errors="coerce")
     train_pool = labelled[labelled.split == "train"].dropna(subset=["day"])
     if train_pool.empty:
@@ -144,12 +161,13 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         "refit_frequency": freq,
         "monotonicity": monotonicity_check(labelled),
         "prompt_versions_in_training_labels": prompt_versions_used(labelled),
+        "classes": classes,
+        "gold": gold_path.name,
         "provisional": True,
-        "warning": ("Labels derive from a single 7B annotator under PROMPT_V1, which "
-                    "did not define the task (AUDIT_REPORT 8d). These scores are a "
-                    "pipeline demonstration, NOT a sentiment measurement."),
+        "warning": _provenance_warning(prompt_versions_used(labelled)),
         "label_distribution": scored.sent_label.value_counts()
-                                    .reindex(LABELS, fill_value=0).astype(int).to_dict(),
+                                    .reindex(LABELS_3 if classes == 3 else LABELS,
+                                             fill_value=0).astype(int).to_dict(),
     }
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return scored
@@ -157,18 +175,26 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--metadata", type=Path, default=DEFAULT_METADATA)
     parser.add_argument("--mode", choices=("expanding", "static"), default="expanding",
                         help="expanding = leakage-free refit; static LEAKS, diagnostic only")
     parser.add_argument("--min-train", type=int, default=200)
+    parser.add_argument("--classes", type=int, choices=(3, 5), default=5)
     args = parser.parse_args()
-    scored = run(output_path=args.output, mode=args.mode, min_train=args.min_train)
+    scored = run(corpus_path=args.corpus, gold_path=args.gold, split_path=args.split, output_path=args.output,
+                 metadata_path=args.metadata, mode=args.mode, min_train=args.min_train,
+                 classes=args.classes)
     blank = int((scored.sent_label == "").sum())
     print(f"mode={args.mode}  scored {len(scored)-blank:,} of {len(scored):,} headlines"
           f"  ({blank:,} left unscored: insufficient prior labels)")
-    print(scored.sent_label.value_counts().reindex(LABELS, fill_value=0).to_string())
+    print(scored.sent_label.value_counts().reindex(
+        LABELS_3 if args.classes == 3 else LABELS, fill_value=0).to_string())
     print(f"\nmean score {scored.sent_score.mean():+.3f} "
-          f"(0 = neutral; positive drift indicates the v1 label skew)")
+          f"(0 = neutral)")
 
 
 if __name__ == "__main__":
