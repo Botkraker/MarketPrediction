@@ -99,7 +99,10 @@ def cache_path(cache_dir: Path, translate_first: bool, stem: str) -> Path:
 def build(input_path: Path = DEFAULT_INPUT, cache_dir: Path = DEFAULT_CACHE_DIR,
           translate_first: bool = False, id_column: str = "gold_item_id",
           text_column: str = "headline_clean", encoder=encode, translator=translate) -> Path:
-    frame = pd.read_csv(input_path, keep_default_na=False)
+    if Path(input_path).suffix == ".parquet":       # the corpus, for score_corpus.py
+        frame = pd.read_parquet(input_path).fillna({text_column: ""})
+    else:
+        frame = pd.read_csv(input_path, keep_default_na=False)
     ids = frame[id_column].astype(str).tolist()
     if len(set(ids)) != len(ids):
         raise ValueError(f"{id_column} is not unique")
