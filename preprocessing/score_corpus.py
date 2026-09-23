@@ -27,12 +27,24 @@ void while that holds.
                         downstream rather than silently imputed.
   static              : the old single-fit behaviour. Leaks. Kept only so the
                         difference can be quantified; never use it for a result.
+
+SCORERS (--scorer, one or more; several are averaged at the probability level)
+  tfidf     char-ngram TF-IDF + logistic regression (sentiment_baseline.py)
+  finbert   linear head on frozen FinBERT embeddings (finbert_head.py). Needs two
+            caches from finbert_embed.py: the gold set (keyed by gold_item_id)
+            and the corpus (keyed by row_id, --id-column row_id).
+  camembert fine-tuned French encoder (camembert_finetune.py). --ft-epochs is
+            fixed rather than re-searched each year, and should come from the
+            full-train dev search that camembert_finetune.py reports.
+Every scorer is refit inside each expanding window, so the leakage guarantee
+above holds for all of them, not only TF-IDF.
 """
 
 import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from gold import LABELS
@@ -41,8 +53,8 @@ from sentiment_baseline import COLLAPSE_3, LABELS_3, build_model
 ROOT = Path(__file__).resolve().parent.parent
 CURATED = ROOT / "data" / "curated"
 DEFAULT_CORPUS = CURATED / "03_dedup.parquet"
-DEFAULT_GOLD = CURATED / "sentiment_gold_annotation1.csv"
-DEFAULT_SPLIT = CURATED / "sentiment_gold_split.csv"
+DEFAULT_GOLD = CURATED / "sentiment_gold_v2_full.csv"
+DEFAULT_SPLIT = CURATED / "sentiment_gold_v2_full_split.csv"
 DEFAULT_OUTPUT = CURATED / "04_scored.parquet"
 DEFAULT_METADATA = CURATED / "04_scored_metadata.json"
 
@@ -90,14 +102,87 @@ def _provenance_warning(versions: list[str]) -> str:
             "evaluation split before treating these scores as a measurement.")
 
 
-def _fit(train: pd.DataFrame):
-    return build_model().fit(train.headline_clean, train.adjudicated_label)
+def _as_frame(probs: np.ndarray, classes, labels: list[str]) -> pd.DataFrame:
+    """Probabilities on the full label list. An early window can lack a class
+    entirely; it gets probability 0 there instead of shifting the columns."""
+    return pd.DataFrame(probs, columns=list(classes)).reindex(columns=labels, fill_value=0.0)
+
+
+def tfidf_scorer(labels: list[str]):
+    def fit(train: pd.DataFrame):
+        model = build_model().fit(train.headline_clean, train.adjudicated_label)
+        return lambda rows: _as_frame(model.predict_proba(rows.headline_clean.astype(str)),
+                                      model.classes_, labels)
+    return fit
+
+
+def finbert_scorer(labels: list[str], gold_cache: Path, corpus_cache: Path):
+    import finbert_embed
+    from finbert_head import fit_head
+
+    def table(cache):
+        ids, vectors, _, meta = finbert_embed.load(cache)
+        return pd.Series(np.arange(len(ids)), index=ids), vectors, meta
+
+    gold_pos, gold_vec, gold_meta = table(gold_cache)
+    corpus_pos, corpus_vec, corpus_meta = table(corpus_cache)
+    if gold_meta["translated"] != corpus_meta["translated"]:
+        raise ValueError("gold and corpus embeddings differ in translation -- not comparable")
+
+    def lookup(position, vectors, keys):
+        keys = keys.astype(str)
+        missing = ~keys.isin(position.index)
+        if missing.any():
+            raise ValueError(f"{int(missing.sum())} rows have no embedding")
+        return vectors[position.loc[keys].to_numpy()]
+
+    def fit(train: pd.DataFrame):
+        head, _, _ = fit_head(lookup(gold_pos, gold_vec, train.gold_item_id),
+                              train.adjudicated_label.to_numpy(),
+                              [l for l in labels if l in set(train.adjudicated_label)])
+        return lambda rows: _as_frame(
+            head.predict_proba(lookup(corpus_pos, corpus_vec, rows.row_id)),
+            head.classes_, labels)
+    fit.meta = {"translated": gold_meta["translated"],
+                "encoder_revision": gold_meta["encoder_revision"],
+                "translator_revision": gold_meta.get("translator_revision")}
+    return fit
+
+
+def camembert_scorer(labels: list[str], model_key: str, epochs: int, seeds: int):
+    import camembert_finetune
+
+    def fit(train: pd.DataFrame):
+        present = [l for l in labels if l in set(train.adjudicated_label)]
+        model = camembert_finetune.fit(train.headline_clean, train.adjudicated_label,
+                                       present, model_key, seeds, epochs)
+        return lambda rows: _as_frame(model.predict_proba(rows.headline_clean.astype(str)),
+                                      model.classes_, labels)
+    fit.meta = {"model": camembert_finetune.MODELS.get(model_key, model_key),
+                "epochs": epochs, "seeds": seeds}
+    return fit
+
+
+def averaged(fitters):
+    """Fit every scorer on the same window; average their probabilities."""
+    def fit(train: pd.DataFrame):
+        predictors = [f(train) for f in fitters]
+        return lambda rows: sum(p(rows) for p in predictors) / len(predictors)
+    return fit
+
+
+def _predict(predictor, rows: pd.DataFrame) -> np.ndarray:
+    probs = predictor(rows)
+    return probs.columns.to_numpy()[probs.to_numpy().argmax(axis=1)]
 
 
 def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         split_path: Path = DEFAULT_SPLIT, output_path: Path = DEFAULT_OUTPUT,
         metadata_path: Path = DEFAULT_METADATA, mode: str = "expanding",
-        min_train: int = 200, freq: str = "YS", classes: int = 5) -> pd.DataFrame:
+        min_train: int = 200, freq: str = "YS", classes: int = 3,
+        scorers: tuple[str, ...] = ("tfidf",), gold_embeddings: Path | None = None,
+        corpus_embeddings: Path | None = None, ft_model: str = "camembert",
+        ft_epochs: int = 4, ft_seeds: int = 3) -> pd.DataFrame:
     if mode not in ("expanding", "static"):
         raise ValueError("mode must be 'expanding' or 'static'")
     if classes not in (3, 5):
@@ -112,6 +197,26 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
     if train_pool.empty:
         raise SystemExit("No training rows -- run split.py first.")
 
+    labels = LABELS_3 if classes == 3 else LABELS
+    fitters, scorer_meta = [], {}
+    for name in scorers:
+        if name == "tfidf":
+            fitters.append(tfidf_scorer(labels))
+            scorer_meta[name] = "TfidfVectorizer(char_wb 2-5) + LogisticRegression(balanced)"
+        elif name == "finbert":
+            if not (gold_embeddings and corpus_embeddings):
+                raise SystemExit("--scorer finbert needs --gold-embeddings and --corpus-embeddings")
+            fitters.append(finbert_scorer(labels, gold_embeddings, corpus_embeddings))
+            scorer_meta[name] = {"head": "StandardScaler + LogisticRegression(balanced), "
+                                         "C by 5-fold CV inside each window",
+                                 **fitters[-1].meta}
+        elif name == "camembert":
+            fitters.append(camembert_scorer(labels, ft_model, ft_epochs, ft_seeds))
+            scorer_meta[name] = fitters[-1].meta
+        else:
+            raise ValueError(f"unknown scorer {name!r}")
+    fit = averaged(fitters)
+
     corpus = pd.read_parquet(corpus_path)
     corpus = corpus[corpus.is_canonical & (corpus.relevance_tag != "other")
                     & corpus.date_parse_ok].copy()
@@ -120,8 +225,7 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
 
     unscored = 0
     if mode == "static":
-        model = _fit(train_pool)
-        corpus["sent_label"] = model.predict(corpus.headline_clean.astype(str))
+        corpus["sent_label"] = _predict(fit(train_pool), corpus)
         corpus["sent_model_train_end"] = "ALL (leaks)"
     else:
         corpus["sent_label"] = ""
@@ -136,9 +240,7 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
             if len(past) < min_train or past.adjudicated_label.nunique() < 2:
                 unscored += int(block.sum())      # left blank, never imputed
                 continue
-            model = _fit(past)
-            corpus.loc[block, "sent_label"] = model.predict(
-                corpus.loc[block, "headline_clean"].astype(str))
+            corpus.loc[block, "sent_label"] = _predict(fit(past), corpus.loc[block])
             corpus.loc[block, "sent_model_train_end"] = start.date().isoformat()
     corpus["sent_score"] = corpus.sent_label.map(LABEL_SCORE)
 
@@ -152,7 +254,8 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         "corpus": corpus_path.name,
         "rows_scored": int(len(scored)),
         "train_pool_rows": int(len(train_pool)),
-        "model": "TfidfVectorizer(char_wb 2-5) + LogisticRegression(balanced)",
+        "model": " + ".join(scorers) + (" (probabilities averaged)" if len(scorers) > 1 else ""),
+        "scorers": scorer_meta,
         "label_scale": LABEL_SCORE,
         "mode": mode,
         "leakage_free": mode == "expanding",
@@ -183,11 +286,24 @@ def main() -> None:
     parser.add_argument("--mode", choices=("expanding", "static"), default="expanding",
                         help="expanding = leakage-free refit; static LEAKS, diagnostic only")
     parser.add_argument("--min-train", type=int, default=200)
-    parser.add_argument("--classes", type=int, choices=(3, 5), default=5)
+    parser.add_argument("--classes", type=int, choices=(3, 5), default=3)
+    parser.add_argument("--scorer", nargs="+", default=["tfidf"],
+                        choices=("tfidf", "finbert", "camembert"),
+                        help="several = average of their class probabilities")
+    parser.add_argument("--gold-embeddings", type=Path,
+                        help="finbert_embed.py cache of the gold set (finbert scorer)")
+    parser.add_argument("--corpus-embeddings", type=Path,
+                        help="finbert_embed.py cache of the corpus, --id-column row_id")
+    parser.add_argument("--ft-model", default="camembert", help="camembert or xlmr")
+    parser.add_argument("--ft-epochs", type=int, default=4)
+    parser.add_argument("--ft-seeds", type=int, default=3)
     args = parser.parse_args()
     scored = run(corpus_path=args.corpus, gold_path=args.gold, split_path=args.split, output_path=args.output,
                  metadata_path=args.metadata, mode=args.mode, min_train=args.min_train,
-                 classes=args.classes)
+                 classes=args.classes, scorers=tuple(args.scorer),
+                 gold_embeddings=args.gold_embeddings,
+                 corpus_embeddings=args.corpus_embeddings, ft_model=args.ft_model,
+                 ft_epochs=args.ft_epochs, ft_seeds=args.ft_seeds)
     blank = int((scored.sent_label == "").sum())
     print(f"mode={args.mode}  scored {len(scored)-blank:,} of {len(scored):,} headlines"
           f"  ({blank:,} left unscored: insufficient prior labels)")
