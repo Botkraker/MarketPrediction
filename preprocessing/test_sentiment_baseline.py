@@ -68,3 +68,10 @@ def test_run_refuses_when_split_does_not_match_gold(tmp_path):
     pd.DataFrame({"gold_item_id": ["nope"], "split": ["train"]}).to_csv(s, index=False)
     with pytest.raises(SystemExit, match="run split.py"):
         run(g, s, tmp_path / "x.json")
+
+
+def test_three_class_collapse_maps_extremes_to_neighbours():
+    from sentiment_baseline import COLLAPSE_3, LABELS_3
+    assert COLLAPSE_3["very_negative"] == "negative"
+    assert COLLAPSE_3["very_positive"] == "positive"
+    assert set(COLLAPSE_3.values()) == set(LABELS_3)

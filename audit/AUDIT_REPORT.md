@@ -979,9 +979,35 @@ rows, F1 = 0 for both. On the three populated classes F1 averages 0.60. Train ac
 
 With 1,000 gold rows, `score_corpus.py --mode expanding` would leave an estimated
 26–33% of the corpus unscored and push the first scorable year from 2016 to 2018–19,
-shortening the H1 window. The remaining **1,930** in-study headlines
-(`sentiment_gold_v2_ext.csv`) are being labelled by both local annotators under v2. They
-add training volume and early coverage; they carry no human anchor.
+shortening the H1 window. So the remaining **1,930** in-study headlines
+(`sentiment_gold_v2_ext.csv`) were labelled overnight by both local annotators under v2.
+They add training volume and early coverage; they carry no human anchor.
+
+The extension behaves like the core sample: qwen vs ministral quadratic κ **0.597**
+(core 0.577), label mixes within ~2 points. Same adjudication rules (573 ties broken by
+qwen). The full v2 gold set is **2,930 rows**: 1,970 by model agreement, **810 (28%) by
+the qwen tiebreak**, 150 human. Split: train 2,339, validation 441, evaluation = the
+human 150.
+
+| baseline, validation | train n | QWK | macro-F1 | accuracy over floor |
+|---|---:|---:|---:|---:|
+| core only, 5 classes | 699 | 0.372 | 0.360 | +9.3 pp |
+| full, 5 classes | 2,339 | 0.475 | 0.380 | +14.3 pp |
+| **full, 3 classes** | 2,339 | **0.561** | **0.670** | **+17.5 pp** |
+
+Rescored leakage-free with the full gold at three classes
+(`04_scored_v2.parquet`; the v1 `04_scored.parquet` is left in place):
+
+| | v1 scoring | v2 scoring |
+|---|---:|---:|
+| headlines scored | 36,795 (80.0%) | **39,692 (86.3%)** |
+| first scored year | 2017 | **2016** |
+| mean sentiment score | +0.482 | **+0.147** |
+
+2014–2015 remain unscored: fewer than 200 gold rows predate them. The fall in mean score
+is v1's positive skew leaving the signal. Validation labels are LLM-adjudicated, so these
+numbers measure agreement with the adjudicated labels, not with the human; the human
+evaluation split has not been spent.
 
 ### Pipeline robustness fixes found on the way
 
