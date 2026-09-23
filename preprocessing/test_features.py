@@ -139,3 +139,19 @@ def test_ret_lag0_is_not_look_ahead():
     assert np.allclose(px["ret"].dropna(), expected.dropna())
     # ret[i] uses close[i] and close[i-1] -- never close[i+1]
     assert px["ret"].iloc[0] != px["ret"].iloc[0] or pd.isna(px["ret"].iloc[0])
+
+
+def test_orthogonal_residual_never_uses_future_rows():
+    """Changing a later row must not change any earlier residual."""
+    from features import expanding_residual
+    rng = np.random.default_rng(0)
+    controls = pd.DataFrame(rng.normal(size=(200, 3)), columns=list("abc"))
+    target = pd.Series(controls.a * 2 + rng.normal(size=200))
+    base = expanding_residual(target, controls, min_history=30)
+    shocked = target.copy()
+    shocked.iloc[150:] += 100.0
+    again = expanding_residual(shocked, controls, min_history=30)
+    assert np.allclose(base.iloc[:150], again.iloc[:150])
+    assert (base.iloc[:30] == target.iloc[:30]).all()          # no projection yet
+    # once history exists it really does remove the control
+    assert abs(np.corrcoef(base.iloc[100:], controls.a.iloc[100:])[0, 1]) < 0.2

@@ -43,8 +43,11 @@ RAW = ROOT / "data" / "raw"
 DEFAULT_HEADLINES = CURATED / "03_dedup.parquet"
 DEFAULT_PRICES = RAW / "bvmt" / "tunindex_2010_today.csv"
 DEFAULT_CALENDAR = AUDIT / "trading_calendar.csv"
-DEFAULT_SCORED = CURATED / "04_scored.parquet"
+# The scorer H1 is run on (amendment prereg-h1-v1-a1): fine-tuned CamemBERT,
+# yearly expanding refit. 04_scored.parquet is the v1 pipeline demonstration.
+DEFAULT_SCORED = CURATED / "04_scored_v2_camembert.parquet"
 DEFAULT_OUTPUT = CURATED / "daily_features.parquet"
+VOL_CHG_CLIP = 3.0
 
 
 def load_prices(path: Path = DEFAULT_PRICES) -> pd.DataFrame:
@@ -125,15 +128,40 @@ def _add_sentiment(frame: pd.DataFrame, news: pd.DataFrame,
     # log_headlines_lag0 gives an arm where a surviving effect cannot be momentum.
     controls = ["ret_lag0", "ret_lag1", "log_headlines_lag0"]
     for suffix in arms:
-        target = f"sent_mean{suffix}_lag1"
-        usable = frame[controls + [target]].dropna()
-        if len(usable) > len(controls) + 10:
-            beta, *_ = np.linalg.lstsq(
-                np.c_[np.ones(len(usable)), usable[controls].to_numpy()],
-                usable[target].to_numpy(), rcond=None)
-            design = np.c_[np.ones(len(frame)), frame[controls].fillna(0.0).to_numpy()]
-            frame[f"sent_resid{suffix}_lag1"] = frame[target] - design @ beta
+        frame[f"sent_resid{suffix}_lag1"] = expanding_residual(
+            frame[f"sent_mean{suffix}_lag1"], frame[controls])
     return frame
+
+
+RESID_MIN_HISTORY = 60
+
+
+def expanding_residual(target: pd.Series, controls: pd.DataFrame,
+                       min_history: int = RESID_MIN_HISTORY) -> pd.Series:
+    """target minus its projection on controls, with the projection fit ONLY on
+    rows strictly before each row (amendment prereg-h1-v1-a1).
+
+    The previous full-sample fit let every residual depend on future sessions --
+    a look-ahead in the arm meant to be the cleanest. Rows with less than
+    `min_history` usable prior rows get no projection (residual = target): they
+    fall inside walk_forward's first training window, never in a prediction, and
+    this keeps every arm on the same sessions."""
+    design = np.c_[np.ones(len(controls)), controls.fillna(0.0).to_numpy()]
+    y = target.to_numpy(dtype=float)
+    ok = ~np.isnan(y) & controls.notna().all(axis=1).to_numpy()
+    out = y.copy()
+    xtx = np.zeros((design.shape[1], design.shape[1]))
+    xty = np.zeros(design.shape[1])
+    used = 0
+    for i in range(len(y)):
+        if used >= min_history:
+            beta = np.linalg.lstsq(xtx, xty, rcond=None)[0]
+            out[i] = y[i] - design[i] @ beta
+        if ok[i]:                       # row i joins the history only after it is used
+            xtx += np.outer(design[i], design[i])
+            xty += design[i] * y[i]
+            used += 1
+    return pd.Series(out, index=target.index)
 
 
 def build(headlines_path: Path = DEFAULT_HEADLINES,
@@ -201,6 +229,20 @@ def build(headlines_path: Path = DEFAULT_HEADLINES,
         frame[f"abs_ret_lag{lag}"] = frame["abs_ret"].shift(lag)
     frame["ret_next"] = frame["ret"].shift(-1)      # the thing H1 wants to predict
 
+    # ---- F0 completion (blueprint 5.2; amendment prereg-h1-v1-a1) ----
+    # Volume change: session i's volume is known once i closes. 56 sessions report
+    # volume 0, impossible for the index, so 0 is treated as missing. A missing
+    # change is filled with 0 ("no information") to keep every arm on the same
+    # sessions, and the change is clipped to +/-3 log units: 21 moves beyond that
+    # would otherwise dominate a linear model's fit.
+    log_volume = np.log(frame["volume"].where(frame["volume"] > 0))
+    frame["vol_chg_lag0"] = log_volume.diff().fillna(0.0).clip(-VOL_CHG_CLIP, VOL_CHG_CLIP)
+    # Day of week of the TARGET session (i+1), which is known in advance from the
+    # exchange calendar. Friday is the reference level.
+    target_dow = frame["session"].shift(-1).dt.dayofweek
+    for day, name in enumerate(("mon", "tue", "wed", "thu")):
+        frame[f"dow_next_{name}"] = (target_dow == day).astype(float).where(target_dow.notna())
+
     # ---- sentiment aggregation (only if the corpus has been scored) ----
     scored_path = Path(scored) if scored else DEFAULT_SCORED
     if scored_path.exists():
@@ -217,7 +259,7 @@ def main() -> None:
     parser.add_argument("--start", default="2014-01-01")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--scored", default=None,
-                        help="path to 04_scored.parquet (default: curated/04_scored.parquet)")
+                        help="scored corpus (default: curated/04_scored_v2_camembert.parquet)")
     args = parser.parse_args()
     frame = build(output_path=args.output, start=args.start, scored=args.scored)
     covered = int((frame["n_headlines"] > 0).sum())

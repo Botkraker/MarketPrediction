@@ -28,6 +28,10 @@ def _frame(n=900, seed=0, signal="none"):
     for lag in (1, 2, 3):
         f[f"ret_lag{lag}"] = np.roll(r, lag)
     ret = f["ret_next"].to_numpy()
+    f["vol_chg_lag0"] = rng.normal(0, 0.7, n)
+    dow = f["session"].shift(-1).dt.dayofweek
+    for day, name in enumerate(("mon", "tue", "wed", "thu")):
+        f[f"dow_next_{name}"] = (dow == day).astype(float)
 
     noise = lambda: rng.normal(0, 1, n)
     # default: pure noise sentiment in every arm
