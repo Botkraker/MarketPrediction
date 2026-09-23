@@ -1030,6 +1030,72 @@ model-vs-model statistic.
   annotators, human included, worked from it.
 - **The 237 tiebreak rows** are qwen's reading, not an adjudication.
 
+## 8i. Choosing the sentiment scorer (blueprint Phase 2) — 2026-09-23
+
+Every candidate was trained on the v2 `train` split (2,339 rows, 3 classes) and scored on
+`validation` (441 rows, LLM-adjudicated). Nothing was tuned on validation: TF-IDF uses
+fixed settings, the FinBERT head's C is picked by 5-fold CV inside train, and the
+fine-tuned encoders' epoch count is picked on a 15% dev fold carved out of train. The
+fine-tuned models average 3 seeds. The human `evaluation` split has **not** been spent.
+
+| variant | QWK | macro-F1 | acc | pos↔neg swaps |
+|---|---|---|---|---|
+| majority floor (`neutral`) | — | — | 0.524 | — |
+| TF-IDF char n-grams | 0.561 | 0.670 | 0.698 | 13 |
+| FinBERT zero-shot, translated | 0.503 | 0.611 | 0.626 | — |
+| FinBERT head, translated (OPUS-MT) | 0.604 | 0.664 | 0.669 | — |
+| TF-IDF + FinBERT head (prob. average) | 0.625 | 0.697 | 0.710 | 9 |
+| XLM-R base, fine-tuned (6 epochs) | 0.589 | 0.698 | 0.705 | — |
+| TF-IDF + XLM-R | 0.624 | 0.724 | 0.737 | — |
+| **CamemBERT base, fine-tuned (5 epochs)** | **0.708** | 0.732 | 0.735 | **3** |
+| TF-IDF + CamemBERT | 0.692 | 0.742 | 0.748 | 6 |
+| TF-IDF + FinBERT + CamemBERT *(post hoc)* | 0.721 | 0.747 | 0.748 | 2 |
+
+Paired bootstrap (2,000 resamples of the validation rows), ΔQWK against TF-IDF + FinBERT:
+CamemBERT **+0.083 [+0.018, +0.151]**; TF-IDF + CamemBERT +0.067 [+0.008, +0.130];
+three-way +0.097 [+0.049, +0.156]. TF-IDF alone −0.064 [−0.139, +0.005].
+
+**Reading.** The native French encoder beats every route through translation, and the
+interval excludes zero. This supports the blueprint's §4.1 point that translation costs
+sentiment signal. XLM-R is worse than CamemBERT and took 108 minutes against 5, so it is
+dropped. The three-way blend was assembled after these numbers were seen, so its lead
+is optimistic. It also needs the whole corpus translated and embedded first. CamemBERT
+alone has nearly the same score, the fewest severe errors, and no translation step.
+
+### Corpus scoring and an out-of-time check
+
+`score_corpus.py --scorer camembert --ft-epochs 5` (yearly expanding refit, 3 seeds,
+~11 min on an RTX 5050) scores the same 39,692 of 46,013 headlines as TF-IDF. The two
+agree on 61.9% of headlines, and 3,162 (8.0%) get opposite signs.
+
+Every gold row outside `evaluation` was scored by a model fit only on labels dated
+before its year, so comparing those rows with their labels is an out-of-time test:
+
+| year | TF-IDF QWK | CamemBERT QWK | n |
+|---|---|---|---|
+| 2016 | 0.193 | 0.296 | 171 |
+| 2017 | **0.446** | 0.254 | 165 |
+| 2018 | **0.414** | 0.297 | 157 |
+| 2019 | 0.481 | **0.602** | 193 |
+| 2020–2026 | 0.33–0.48 | **0.56–0.64** | 1,615 |
+| pooled | 0.400 | **0.537** | 2,301 |
+
+**CamemBERT needs a few hundred more labels than TF-IDF to pay off.** The 2017–2018
+windows fine-tune on roughly 400–600 labels and lose to TF-IDF. From 2019 (≈700+) it
+wins every year, by 0.12–0.27. This matters for H1. The early windows also shift
+the label mix: CamemBERT's yearly mean score is −0.10 in 2017 against +0.19 for
+TF-IDF, and part of that is the scorer, not the news. Over the whole corpus
+CamemBERT also predicts more `negative` than the gold set (24.6% against ~15.9%).
+This comes from the class-balanced loss.
+
+**Recommendation:** CamemBERT, fine-tuned, 5 epochs, 3 seeds. Before H1, decide how to
+handle the thin early windows. Either (a) use TF-IDF for any window with fewer than a
+declared number of training labels, or (b) accept the weaker 2016–2018 scores and add
+the per-block stability check (§6.3) to H1. That check would show a scorer-driven
+break. Spend the 150-row human evaluation split once
+(`camembert_finetune.py --evaluation`). Both are the project owner's call; nothing here
+has spent it.
+
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):
