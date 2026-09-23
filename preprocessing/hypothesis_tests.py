@@ -45,7 +45,9 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats.contingency_tables import mcnemar
 
-from baseline import evaluate, walk_forward
+import h1_stats
+from baseline import F0_FEATURES, evaluate, walk_forward
+from h1_stats import holm
 
 ROOT = Path(__file__).resolve().parent.parent
 CURATED = ROOT / "data" / "curated"
@@ -53,7 +55,9 @@ DEFAULT_INPUT = CURATED / "daily_features.parquet"
 DEFAULT_OUTPUT = CURATED / "hypothesis_results.json"
 
 # Price-only controls. Identical in both arms so the only difference is sentiment.
-BASELINE_FEATURES = ["ret_lag0", "ret_lag1", "ret_lag2"]
+# Was ["ret_lag0", "ret_lag1", "ret_lag2"] at prereg-h1-v1; amendment a1 completes
+# F0 with volume change and day of week (blueprint 5.2).
+BASELINE_FEATURES = F0_FEATURES
 
 # What features.py must produce, per arm suffix ("", "_ex_price", "_price_only").
 SENTIMENT_COLUMNS = ["sent_mean_lag1", "sent_pos_share_lag1", "sent_neg_share_lag1"]
@@ -75,18 +79,6 @@ def required_columns(arm: str) -> list[str]:
     # Without it, the 0-fill needed to keep the arms aligned is a silent lie.
     return ([c.replace("_lag1", f"{ARMS[arm]}_lag1") for c in SENTIMENT_COLUMNS]
             + [f"has_sent{ARMS[arm]}_lag1"])
-
-
-def holm(pvalues: dict[str, float]) -> dict[str, float]:
-    """Holm-Bonferroni. Three or four arms are tested against one baseline on the
-    same data; reporting the smallest raw p as if it were the only test is how a
-    null becomes a finding."""
-    ordered = sorted(pvalues.items(), key=lambda kv: kv[1])
-    m, adjusted, running = len(ordered), {}, 0.0
-    for i, (name, p) in enumerate(ordered):
-        running = max(running, min(1.0, (m - i) * p))
-        adjusted[name] = round(running, 4)
-    return adjusted
 
 
 def minimum_detectable_effect(n_pairs: int, discordant: int, power: float = 0.80,
@@ -203,13 +195,14 @@ def run_h1(frame: pd.DataFrame, min_train: int = 500, refit_every: int = 20,
     results = {"baseline": evaluate(base_preds) | {"features": BASELINE_FEATURES}}
     absent[ORTHOGONAL_ARM] = [c for c in required_columns(ORTHOGONAL_ARM)
                               if c not in frame.columns]
-    raw_p = {}
+    raw_p, arm_preds, arm_features = {}, {}, {}
     for arm in list(ARMS) + [ORTHOGONAL_ARM]:
         if absent[arm]:
             results[arm] = {"skipped": f"missing columns: {absent[arm]}"}
             continue
         features = BASELINE_FEATURES + required_columns(arm)
         preds = walk_forward(frame, features, min_train, refit_every, kind)
+        arm_preds[arm], arm_features[arm] = preds, features
         test = paired_test(preds, base_preds)
         raw_p[arm] = test["p_value"]
         results[arm] = (evaluate(preds)
@@ -234,6 +227,10 @@ def run_h1(frame: pd.DataFrame, min_train: int = 500, refit_every: int = 20,
         int(((base_preds.y_pred == base_preds.y_true)
              != (base_preds.y_constant == base_preds.y_true)).sum()))
     results["interpretation"] = _interpret(results)
+    # Amendment a1: the dAUC statistics and the go/no-go decision (h1_stats.py).
+    # The sign-test ladder above stays, but the decision is `go_no_go`.
+    results["go_no_go"] = h1_stats.analyse(arm_preds, base_preds, frame, arm_features,
+                                           BASELINE_FEATURES, kind)
     return results
 
 
@@ -380,6 +377,22 @@ def main() -> None:
     print(f"\nMDE at 80% power: {pw.get('mde_pp_at_80_power')}pp "
           f"(sign test) | adequately powered: {pw.get('adequately_powered')}")
     print(f"\n{r['interpretation']}")
+
+    g = r["go_no_go"]
+    print(f"\n{'arm':<12}{'dAUC':>8}{'95% CI':>20}{'p Holm':>9}{'blocks+':>9}"
+          f"{'2020 only':>11}{'ex-2020':>9}  pass")
+    print("-" * 86)
+    for arm, a in g["arms"].items():
+        d, c = a["delta_auc"], a["covid"]
+        ci = f"[{d['ci95'][0]:+.4f}, {d['ci95'][1]:+.4f}]" if "ci95" in d else "—"
+        print(f"{arm:<12}{d['delta_auc']:>+8.4f}{ci:>20}{d.get('p_holm') or float('nan'):>9.4f}"
+              f"{a['per_block']['share_positive']:>9.2f}"
+              f"{c['only_2020']['delta_auc']:>+11.4f}{c['excluding_2020']['delta_auc']:>+9.4f}"
+              f"  {'PASS' if a['passes'] else 'fail'}")
+    print(f"purged {g['purged_kfold_f0']['k']}-fold AUC (diagnostic): F0 "
+          f"{g['purged_kfold_f0']['mean_auc']:.4f}  "
+          + "  ".join(f"{arm} {a['purged_kfold']['mean_auc']:.4f}" for arm, a in g["arms"].items()))
+    print(f"\nrule: {g['rule']}\nGO/NO-GO: {g['verdict']}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import json
+import zlib
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,7 +19,7 @@ class TinyTokenizer:
 
     def __call__(self, texts, return_tensors="pt", padding=True, truncation=True,
                  max_length=64):
-        ids = [[hash(w) % 97 + 1 for w in t.split()][:max_length] or [0] for t in texts]
+        ids = [[zlib.crc32(w.encode()) % 997 + 1 for w in t.split()][:max_length] or [0] for t in texts]
         width = max(len(i) for i in ids)
         input_ids = torch.tensor([i + [0] * (width - len(i)) for i in ids])
         return transformers.BatchEncoding({"input_ids": input_ids,
@@ -28,7 +29,8 @@ class TinyTokenizer:
 class TinyModel(torch.nn.Module):
     def __init__(self, n_labels):
         super().__init__()
-        self.bag = torch.nn.EmbeddingBag(98, n_labels, mode="sum")
+        self.bag = torch.nn.EmbeddingBag(998, n_labels, mode="sum")
+        torch.nn.init.zeros_(self.bag.weight)       # unseen words contribute nothing
 
     def forward(self, input_ids, attention_mask):
         return SimpleNamespace(logits=self.bag(input_ids,

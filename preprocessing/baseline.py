@@ -32,6 +32,11 @@ CURATED = ROOT / "data" / "curated"
 DEFAULT_INPUT = CURATED / "daily_features.parquet"
 DEFAULT_OUTPUT = CURATED / "baseline_results.json"
 
+# Blueprint 5.2 F0, completed by amendment prereg-h1-v1-a1: lagged returns plus
+# volume change and the target session's day of week. H1's baseline arm.
+F0_FEATURES = ["ret_lag0", "ret_lag1", "ret_lag2", "vol_chg_lag0",
+               "dow_next_mon", "dow_next_tue", "dow_next_wed", "dow_next_thu"]
+
 FEATURE_SETS = {
     # ret_lag0 is the last CLOSED session's return -- available at prediction
     # time and the strongest single predictor. Omitting it (an earlier bug)
@@ -43,6 +48,7 @@ FEATURE_SETS = {
     # news VOLUME only -- still price-only in spirit (no sentiment), included to
     # show whether counting headlines adds anything before we ever score them.
     "momentum3_news":  ["ret_lag0", "ret_lag1", "ret_lag2", "log_headlines_lag0"],
+    "F0":              F0_FEATURES,
 }
 
 
@@ -51,6 +57,15 @@ FEATURE_SETS = {
 # prediction are the ones most correlated with it, so training on them is the
 # closest thing to leakage this design can still contain.
 EMBARGO_SESSIONS = 5
+
+
+def make_model(kind: str):
+    if kind == "classify":
+        return make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, C=1.0))
+    # Regress the RETURN and take the sign. Classifying the direction throws away
+    # magnitude, and the binary label is dominated by the upward drift, so the
+    # classifier collapses toward "always up".
+    return make_pipeline(StandardScaler(), LinearRegression())
 
 
 def walk_forward(frame: pd.DataFrame, features: list[str],
@@ -76,16 +91,8 @@ def walk_forward(frame: pd.DataFrame, features: list[str],
         cut = max(1, i - embargo)          # strictly-before, minus the embargo
         if model is None or (i - min_train) % refit_every == 0:
             # strictly-before slice: nothing at or after i is visible
-            if kind == "classify":
-                model = make_pipeline(StandardScaler(),
-                                      LogisticRegression(max_iter=1000, C=1.0))
-                model.fit(X[:cut], y[:cut])
-            else:
-                # Regress the RETURN and take the sign. Classifying the direction
-                # throws away magnitude, and the binary label is dominated by the
-                # upward drift, so the classifier collapses toward "always up".
-                model = make_pipeline(StandardScaler(), LinearRegression())
-                model.fit(X[:cut], target[:cut])
+            model = make_model(kind)
+            model.fit(X[:cut], y[:cut] if kind == "classify" else target[:cut])
             train_majority = int(y[:cut].mean() >= 0.5)
         if kind == "classify":
             # predict_proba, not predict: the class label carries no ranking
