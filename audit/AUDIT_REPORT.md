@@ -1088,6 +1088,27 @@ TF-IDF, and part of that is the scorer, not the news. Over the whole corpus
 CamemBERT also predicts more `negative` than the gold set (24.6% against ~15.9%).
 This comes from the class-balanced loss.
 
+### Decision and the one evaluation spend (2026-09-23)
+
+The project owner chose **CamemBERT alone**: no TF-IDF fallback for the thin early
+windows. The per-block stability check (§6.3) is what will expose a scorer-driven break.
+The frozen human `evaluation` split was then spent on it, once:
+
+| | n | QWK | macro-F1 | acc | floor |
+|---|---|---|---|---|---|
+| CamemBERT vs human | 150 | **0.635** [0.524, 0.732] | 0.669 | 0.660 | 0.567 |
+
+The CI is a 2,000-resample bootstrap. The retrained model reproduced the validation run's
+dev curves to three decimals, so this is the validated model. For scale, §8h's annotators
+against the same human score QWK 0.689 (qwen) and 0.571 (ministral), on the 5-point
+scale, so not exactly comparable. The classifier lands between its two teachers. The
+dominant error is human-`neutral` read as `positive` (32 of 85 neutral rows). Only 3 of
+65 polar rows flip sign, and none from positive to negative. The TF-IDF blend that
+`camembert_finetune.py` also prints for this split (0.577) was not a candidate and
+played no part in the choice.
+
+The recommendation below is kept as written before the decision.
+
 **Recommendation:** CamemBERT, fine-tuned, 5 epochs, 3 seeds. Before H1, decide how to
 handle the thin early windows. Either (a) use TF-IDF for any window with fewer than a
 declared number of training labels, or (b) accept the weaker 2016–2018 scores and add
