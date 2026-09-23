@@ -1117,6 +1117,39 @@ break. Spend the 150-row human evaluation split once
 (`camembert_finetune.py --evaluation`). Both are the project owner's call; nothing here
 has spent it.
 
+## 8j. H1 on v2 scores, under amendment a1: NO-GO (2026-09-23)
+
+The first H1 run on real sentiment scores. It uses fine-tuned CamemBERT with a yearly refit, the F0 baseline, and the statistics and decision rule declared in `PREREG_H1_AMENDMENT_A1.md`. That amendment was tagged `prereg-h1-v1-a1` and its section C was filled in before this run. Nothing was changed after the result was seen. The walk-forward is `min_train=500`, `refit_every=20`, `kind="regress"`, with a 5-session embargo and 2,678 paired predictions from 2016 to 2026.
+
+**Primary: ΔAUC against F0 (F0 AUC 0.6074)**
+
+| arm | AUC | ΔAUC | 95% block-bootstrap CI | p (Holm) | quarters with ΔAUC > 0 | 2020 only | excluding 2020 | pass |
+|---|---|---|---|---|---|---|---|---|
+| all | 0.6016 | −0.0058 | [−0.0123, +0.0001] | 0.216 | 42% | +0.0024 | −0.0064 | no |
+| ex_price | 0.6026 | −0.0048 | [−0.0113, +0.0009] | 0.216 | 30% | +0.0008 | −0.0053 | no |
+| placebo | 0.6036 | −0.0038 | [−0.0097, +0.0017] | 0.216 | 40% | −0.0038 | −0.0032 | no |
+| orthogonal | 0.6046 | −0.0028 | [−0.0065, +0.0001] | 0.216 | 44% | −0.0009 | −0.0029 | no |
+
+**Verdict: NO-GO. H1 is not supported.** Every arm's point estimate is *below* F0, and no interval lies above zero. Each arm gains in fewer than half of the 43 scorable quarters, against the ⅔ required. The purged 5-fold diagnostic agrees: F0 0.5966, and the arms 0.5926 to 0.5975.
+
+**Secondary results (reported, not deciding).**
+- The sign test is null in every arm (McNemar p from 0.31 to 0.86).
+- Diebold–Mariano finds the forecast significantly *worse* with sentiment in all, ex_price and placebo (p ≈ 0.04; out-of-sample R² 0.053–0.056 against 0.0615 for F0). The orthogonal arm's p is 0.076.
+- The minimum detectable effect is 3.2pp, so the sign test on its own is underpowered, as §8e said. The ΔAUC test is the primary one, and it is null too.
+
+**Reading.** Adding CamemBERT sentiment costs a little variance and gives back nothing measurable.
+
+The concern raised in §8i, that the thin 2016–2018 scorer windows might drag the result down, does not explain it. In the ex_price arm, quarters from 2019 onward, where the scorer beats TF-IDF out of time, are also mostly negative or zero. This is a descriptive look, not a new test.
+
+The result stands as a null for daily French-language headline sentiment against next-session Tunindex direction, in this design. Three limits on it:
+- The scorer agrees with a human at QWK 0.635.
+- Only one human anchored the labels.
+- Headlines have no timestamps, so any same-day signal is excluded by construction (the rule-2 alignment in `features.py`).
+
+**F0 itself is stronger than the old baseline.** The sensitivity grid on F0 beats the walk-forward constant in all 16 configurations and is significant in 12 of 16. The old 3-lag baseline managed 8 of 16. Its accuracy ranges from 0.572 to 0.583. Volume change and day of week helped the price-only model, so the bar sentiment had to clear was higher.
+
+Output files: `data/curated/hypothesis_results.json`, `data/curated/sensitivity_results.json`, and `data/curated/daily_features.parquet`, built from `04_scored_v2_camembert.parquet`.
+
 ## 9. Explicit blocked/skipped items (for transparency)
 
 - Step 6 (BVMT missing sessions, high<low checks, stale-price runs, 20-date cross-check):

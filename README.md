@@ -9,9 +9,9 @@ The design follows the architecture blueprint (v1.1, September 2026), which adap
 - **H1:** sentiment features add predictive power over lagged price, volume and macro controls under walk-forward validation.
 - **H2:** the source ranking found for Turkiye (international outlets dominate) does not automatically transfer to Tunisia.
 
-**Neither hypothesis has been tested.** The harness runs end to end, but on labels from a single 7B annotator under a prompt that did not define the task, and the design is **underpowered** (minimum detectable effect 3.06pp against published effects of 1-2pp). A null result from it is *inconclusive*, not evidence of absence.
+**H1 has been tested once on real sentiment scores, and the result is a null (NO-GO).** The scores come from a fine-tuned CamemBERT, with QWK 0.635 against a 150-row human anchor. The test ran under the pre-registration amendment [`PREREG_H1_AMENDMENT_A1.md`](audit/PREREG_H1_AMENDMENT_A1.md). Every sentiment arm's ΔAUC against the price-only F0 baseline is slightly negative (−0.003 to −0.006), and no confidence interval lies above zero. Diebold–Mariano finds the return forecast slightly *worse* with sentiment. Details are in [AUDIT_REPORT.md](audit/AUDIT_REPORT.md) §8j. H2 is untested: it needs an Arabic source.
 
-The audience is NLP and quantitative finance students and researchers working on frontier-market text. Only the data and preprocessing stages exist in this repo. No sentiment model, forecasting model or result is included yet, and none is claimed.
+The audience is NLP and quantitative finance students and researchers working on frontier-market text. The repo contains the data pipeline, the sentiment scorer (§8i), and the H1 harness with its result. It contains no trading model, and none is claimed.
 
 ## Features
 
@@ -164,8 +164,13 @@ Also outstanding: F0 lacks day-of-week and volume change, F2 cannot split FR/AR
 (no Arabic corpus), F3 is not its own rung, no block-bootstrap CIs, no purged
 k-fold diagnostic, no separate COVID-2020 analysis.
 
-Still not implemented: the sentiment model proper (only a TF-IDF baseline exists),
-SHAP, and any reportable H1/H2 result.
+**Update 2026-09-23 (amendment a1):**
+- F0 now includes volume change and day of week.
+- Block-bootstrap CIs, per-quarter stability, a COVID-2020 split and a purged k-fold diagnostic are in `h1_stats.py`.
+- F1 was tested: Brent, EUR/TND and Euro Stoxx 50 each fail the declared entry rule (`macro_controls.py`).
+- The sentiment model is fine-tuned CamemBERT.
+
+Still not implemented: SHAP, and H2.
 
 The harness is committed and tagged **`prereg-h1-v1`**, so the pre-registration claim
 rests on git history rather than a file timestamp. One caveat stated plainly: the
@@ -187,11 +192,11 @@ and is declared as such rather than presented as pre-specified.
 git clone <repo-url>  # TODO: repository URL
 cd ProjectNLP
 python -m venv .venv && source .venv/bin/activate
-pip install pandas pyarrow requests certifi lxml curl_cffi python-dateutil duckdb matplotlib langdetect pytest dvc
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu128
 dvc pull
 ```
 
-There is no `requirements.txt` or `pyproject.toml`. The package list above comes from the imports in the code. `pyarrow` is needed for the `.parquet` files, and `truststore` and `selenium` are optional.
+`requirements.txt` pins the versions the pipeline last ran with. The extra index is for the CUDA 12.8 build of torch; on a CPU-only machine, drop the `+cu128` suffix in the file. `truststore` and `selenium` are optional.
 
 `dvc pull` restores `data/` (tracked by [data.dvc](data.dvc)) and the fastText model tracked by [audit/models/lid.176.ftz.dvc](audit/models/lid.176.ftz.dvc).
 
