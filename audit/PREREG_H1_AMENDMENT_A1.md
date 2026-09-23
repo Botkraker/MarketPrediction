@@ -37,10 +37,22 @@ Every sentiment arm contains F0 plus its own sentiment columns, so the paired co
 | candidate | next-session r | p (HAC) | enters F1 |
 |---|---|---|---|
 | Brent (EIA RBRTE) | +0.024 | 0.433 | no |
-| EUR/TND | *pending data* | | |
-| European index returns | *pending data* | | |
+| EUR/TND (BCT interbank average) | +0.004 | 0.810 | no |
+| Euro Stoxx 50 (Yahoo `^STOXX50E`) | +0.062 | 0.072 | no, a near miss |
 
-The two pending candidates are tested with this script and rule before H1 runs, and their rows are filled in by a follow-up commit that changes nothing else. If a candidate's data cannot be obtained, H1 is reported against F0 and that gap is stated.
+*Filled in on 2026-09-23 by a follow-up commit that changes nothing else, before any H1 run.*
+
+The data came from `scrape_macro.py` and is saved in `data/raw/macro/`:
+- EUR/TND: 3,206 BCT daily fixings, 2014–2026, holidays left missing.
+- Euro Stoxx 50: 3,209 closes.
+
+The full output is in `data/curated/macro_controls.json`.
+
+**No candidate enters, so H1 is run against F0.** Euro Stoxx 50 misses the threshold narrowly. It is reported as a near miss and the rule is not relaxed. Two descriptive findings do not bear on the rule:
+- Same-session co-movement with Euro Stoxx is significant (r = +0.067, p = 0.008). The two trading days overlap, so a European move is not yet known when Tunis closes.
+- Absolute moves in Brent and Euro Stoxx relate to the next session's absolute Tunindex return (r ≈ +0.10–0.11, p ≈ 0.02). That is volatility spillover, which a direction model does not use.
+
+European index returns stand for a single index, chosen before testing, to avoid a family of index tests.
 
 ## D. Statistics and the go/no-go (blueprint §6.1–6.3)
 
