@@ -11,3 +11,10 @@ __pycache__/
 .pytest_cache/
 /data
 /.claude
+# local assistant / editor files (kept on disk, not part of the project)
+CLAUDE.md
+CLAUDE.pdf
+AGENTS.md
+STATUS.md
+architecture-essentials.md
+.vscode/
