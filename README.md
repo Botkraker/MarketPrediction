@@ -1,133 +1,192 @@
-# Does financial news predict the Tunisian stock market?
+<h1 align="center">Tunindex News Sentiment</h1>
 
-A replication of a Borsa Istanbul news-sentiment study on a frontier market: the
-Tunis Stock Exchange (BVMT) and its main index, Tunindex. The project scrapes about
-twelve years of Tunisian financial headlines (2014–2026), builds a sentiment instrument
-for French-language financial news, and tests whether that sentiment improves market
-forecasts beyond what price history already gives.
+<p align="center">
+  <em>Does the morning paper move the Tunis Stock Exchange? We read 46,000 headlines to find out.</em>
+</p>
 
-**Short answer: it does not.** Across three pre-registered tests, adding news sentiment
-to a price-only model never improves the out-of-sample forecast. Price history on its
-own does carry information, including a usable three-week warning for large drops in
-individual stocks.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12-111111?style=flat-square" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/tests-121%20passing-111111?style=flat-square" alt="121 tests passing">
+  <img src="https://img.shields.io/badge/H3-pre--registered-111111?style=flat-square" alt="H3 pre-registered">
+  <img src="https://img.shields.io/badge/data-DVC%20on%20DagsHub-111111?style=flat-square" alt="Data on DagsHub via DVC">
+  <img src="https://img.shields.io/badge/language-French%20news-111111?style=flat-square" alt="French news">
+</p>
 
-## Background: the Turkish study
+<p align="center">
+  <strong>46,013 headlines &middot; 8 outlets &middot; 2016&ndash;2026 &middot; 3 pre-registered tests &middot; 0 of them won by the news</strong><br>
+  <sub>Sentiment from a fine-tuned CamemBERT (agreement with human labels: quadratic &kappa; 0.680), tested out of sample against a price-only model on the same trading sessions.</sub>
+</p>
 
-Ibrahim, Khan & Kaplan (2025, *Borsa Istanbul Review* 25) combined FinBERT sentiment
-with ensemble machine learning and SHAP explanations on Borsa Istanbul. They report that
-news sentiment improves prediction of the Turkish market, and that international outlets
-carry more signal than domestic ones.
+---
 
-Both findings come from a liquid emerging market. This project asks whether they hold in
-a frontier market, where conditions are different:
+In 2025, a study of Borsa Istanbul found that news sentiment helps predict the Turkish
+market, and that international outlets matter more than local ones. Turkey is a liquid
+emerging market. Tunisia is a frontier market: trading is thin, volume comes in sudden
+block trades, and almost the entire financial press writes in French.
 
-- **Thin trading.** Daily Tunindex returns have an autocorrelation of +0.26, far above
-  liquid-market levels, so yesterday's move already predicts part of today's.
-- **Episodic volume.** Trading volume is driven by occasional block trades, not by news
-  flow (correlation between news volume and trading volume: +0.02).
-- **A small, French-language press.** The whole relevant press fits in about 46,000
-  headlines, mostly in French, which rules out English financial models used as they are.
+This project rebuilds that study for the Tunis Stock Exchange (BVMT) and its index,
+Tunindex. It scrapes the Tunisian financial press, trains a French sentiment model on
+labelled headlines, and asks a simple question: once you already know recent prices,
+does the news tell you anything more?
 
-## Research questions and results
+## The answer
 
-| | Question | Result |
+Not in a way we can measure. Adding news to a price-only model never improved a
+forecast, at any horizon.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/h3_effects_dark.svg">
+    <img src="docs/assets/h3_effects.svg" width="860" alt="Effect of adding news on four forecasts, each with a 95% interval. Next session: slightly worse with news. 5 sessions: about zero. 20 sessions: slightly better, with a wide interval. Firm crash warning: slightly better, with an interval that includes zero. Every interval crosses zero.">
+  </picture>
+</p>
+
+Each dot is the change in forecast quality when news is added, and the line is its 95%
+interval. Every interval crosses zero, and every estimate falls short of the smallest
+effect the test could detect (the grey tick). The next-session forecast leans the wrong
+way: news makes it slightly worse, which matches what the earlier tests found.
+
+What does work is price history. A model that only sees past prices flags firm-level
+drops of more than 12% at 2.2 times the base rate, about 15 trading days ahead.
+
+## Turkey vs Tunisia
+
+| | Borsa Istanbul (Ibrahim, Khan & Kaplan, 2025) | Tunis Stock Exchange (this project) |
 |---|---|---|
-| **H1** | Does daily news sentiment improve next-session up/down prediction over price history? | **Rejected.** Every sentiment variant scores below the price-only baseline (ROC-AUC 0.607). A Diebold-Mariano test finds the loss significant in 3 of 4 variants. |
-| **H2** | Does the Turkish ranking of sources (international above domestic) carry over? | **Inconclusive.** No single outlet adds out of sample; one (Kapitalis) makes forecasts worse. The English outlets could not be tested (see Limitations). |
-| **H3** | Does news improve a three-way forecast (drop / flat / rise) at 1, 5 or 20 sessions, or warn of firm-level crashes? | **Inconclusive at every horizon.** News slightly worsens the next-session forecast, but not significantly after correction. For crashes, news adds nothing to a price-only early-warning model. |
+| Market | liquid emerging market | thin frontier market, return autocorrelation +0.26 |
+| News | domestic and international outlets | about 46,000 headlines, 98% French |
+| Sentiment model | FinBERT (English finance) | CamemBERT fine-tuned on French market headlines |
+| Does sentiment help? | yes | no measurable gain (H1, H3) |
+| Do international outlets matter more? | yes | could not be tested: too few English headlines, and the French model reads English as neutral (H2) |
 
-### H3 in numbers
+## Three questions
 
-H3 was pre-registered ([audit/PREREG_H3.md](audit/PREREG_H3.md), git tag
-`prereg-h3-v1`) before any model was fitted.
+<details>
+<summary><strong>H1. Does daily sentiment improve next-day up/down prediction?</strong> Rejected.</summary>
 
-| Test | Price-only | + news | Difference [95% CI] |
-|---|---|---|---|
-| Next session, log-loss (lower is better) | 1.0790 | 1.0818 | +0.0028 [−0.0003, +0.0060] |
-| 5 sessions, log-loss | | | +0.0016 [−0.004, +0.008] |
-| 20 sessions, log-loss | | | −0.0055 [−0.017, +0.005] |
-| Firm drop > 12% within 20 sessions, PR-AUC | 0.179 | 0.182 | +0.0025 [−0.003, +0.008] |
+<br>
 
-None of these differences is significant. Each null is reported with the smallest effect
-the test could have detected, so they are inconclusive results, not proof that news is
-useless. The price-only crash model flags drops at 2.2 times the base rate, with a median
-of 15 trading days' warning.
+The price-only baseline reaches ROC-AUC 0.607. Every sentiment variant scores below it,
+and a Diebold-Mariano test finds the loss significant in 3 of 4 variants. The variants
+include one built only from "Tunindex closed up 0.3%"-style headlines, because those
+restate the market's own move and would make momentum look like news.
+Evidence: [AUDIT_REPORT §8h.7](audit/AUDIT_REPORT.md).
 
-## Data
+</details>
 
-| Source | Language | Headlines (canonical, relevant) |
+<details>
+<summary><strong>H2. Does the Turkish source ranking carry over?</strong> Inconclusive.</summary>
+
+<br>
+
+Tested outlet by outlet from 2019. None of the French outlets adds anything out of
+sample, and Kapitalis makes the forecast worse (Holm-adjusted p = 0.036). The Guardian,
+the New York Times and The Economist could not be tested: together they contribute about
+1,000 headlines, and the French model scores almost all of them neutral.
+Evidence: [AUDIT_REPORT §8i.6](audit/AUDIT_REPORT.md).
+
+</details>
+
+<details>
+<summary><strong>H3. Does news help a drop / flat / rise forecast, or warn of crashes?</strong> Inconclusive at every horizon.</summary>
+
+<br>
+
+Pre-registered in [audit/PREREG_H3.md](audit/PREREG_H3.md) (git tag `prereg-h3-v1`) before
+any model was fitted.
+
+| Test | Price only | + news | Change [95% CI] | Smallest detectable |
+|---|---|---|---|---|
+| Next session, log-loss | 1.0790 | 1.0818 | +0.0028 [−0.0003, +0.0060] | 0.0046 |
+| 5 sessions, log-loss | | | +0.0016 [−0.004, +0.008] | 0.008 |
+| 20 sessions, log-loss | | | −0.0055 [−0.017, +0.005] | 0.016 |
+| Firm drop > 12%, PR-AUC | 0.179 | 0.182 | +0.0025 [−0.003, +0.008] | 0.008 |
+
+Lower log-loss is better; higher PR-AUC is better. Evidence: [AUDIT_REPORT §H3](audit/AUDIT_REPORT.md).
+
+</details>
+
+## How it works
+
+```
+scrapers/        8 outlets + Tunindex prices            →  data/raw/
+preprocessing/   clean, relevance filter, dedup         →  46,013 headlines
+                 gold labels (2 LLMs, 1 human, Haiku)   →  4,730 labelled headlines
+                 CamemBERT, refit each year on the past →  daily sentiment, 2016+
+                 walk-forward vs price-only model       →  H1, H2, H3
+audit/           every decision, with the numbers behind it
+```
+
+A few rules hold everywhere, because breaking any of them produces a result that looks
+fine and is wrong:
+
+- News dated on day D only predicts sessions after D. Headlines carry no time of day, so
+  a same-day mapping would leak.
+- Each year's sentiment comes from a model trained only on earlier labels.
+- Returns are close-to-close. In a third of rows the index file's `open` column repeats
+  the previous close.
+- The 150 human-labelled headlines are used for grading only, never for training.
+- Every test compares the two models on identical sessions, with block-bootstrap
+  intervals and a Holm correction.
+
+<details>
+<summary><strong>Data</strong></summary>
+
+<br>
+
+| Source | Language | Headlines |
 |---|---|---|
 | ilboursa, Kapitalis, L'Economiste Maghrébin, La Presse, TAP | French | 44,977 |
 | The Guardian, New York Times, The Economist | English | 1,036 |
 | Tunindex daily prices, 2010–2026 | | 4,167 sessions |
 | Per-stock prices, 88 listed firms, 2010–2022 | | 187,987 rows |
 
-Headlines were scraped by the scripts in `scrapers/`. The data itself is versioned with
-DVC on DagsHub, not stored in git.
+Two problems were found and fixed along the way. The scraped "Assabah" turned out to be
+the Moroccan newspaper rather than the Tunisian one; a geography check caught it and it
+was excluded, which leaves the corpus with no Arabic. And 19 "sessions" in the index file
+are copies of the previous day (mostly public holidays), so they are dropped.
 
-Two data problems shaped the design:
+The data is versioned with DVC on DagsHub and is not stored in git.
 
-- **The Arabic source was the wrong newspaper.** The scraped "Assabah" was the Moroccan
-  paper, not the Tunisian one. It was detected by a geography check and excluded, so the
-  corpus has no Arabic.
-- **The index file's `open` column is unreliable.** In a third of rows it repeats the
-  previous close, so all returns are close-to-close.
+</details>
 
-The full evidence chain is in [audit/AUDIT_REPORT.md](audit/AUDIT_REPORT.md).
+<details>
+<summary><strong>The sentiment labels</strong></summary>
 
-## Method
+<br>
 
-1. **Corpus.** Clean, filter for relevance (Tunisian economy, listed issuers, global
-   links), and remove near-duplicates with a template key that keeps signs and clause
-   order.
-2. **Gold labels.** 4,730 headlines labelled for expected market impact:
-   - 2,930 by two local LLMs (qwen2.5-7b, ministral-8b), adjudicated;
-   - 150 by a human, kept aside as the only ground truth;
-   - 1,800 by Claude Haiku, added to give the pre-2019 years enough training data.
+Each headline is labelled for its expected effect on Tunisian listed shares, which is a
+different question from whether its tone sounds positive.
 
-   Haiku was first checked against the human labels, where it agreed better than either
-   local model (quadratic κ 0.756 vs 0.676).
-3. **Sentiment instrument.** CamemBERT fine-tuned on the gold labels (3 classes,
-   3 seeds). On the 150 human headlines it reaches quadratic κ 0.680. Every year is scored
-   by a model trained only on earlier labels, so no score uses future information.
-4. **Forecasting.** Expanding-window walk-forward, refit every 20 sessions, with an
-   embargo of at least the forecast horizon. News published on day D only predicts
-   sessions after D.
-5. **Testing.** Paired comparisons on identical sessions:
-   - block-bootstrap confidence intervals;
-   - Diebold-Mariano tests;
-   - Holm correction within each family of tests.
+- 2,930 headlines labelled by two local models (qwen2.5-7b and ministral-8b) and adjudicated.
+- 150 labelled by a person. These are the only ground truth and are never trained on.
+- 1,800 headlines from 2014–2018 labelled by Claude Haiku, so that the early yearly models
+  have enough data. Haiku was first graded on the 150 human labels and agreed with them
+  more closely than either local model (quadratic κ 0.756 against 0.676). It saw neither
+  the date nor the outlet.
 
-   Price-report headlines ("Tunindex closes up 0.3%") restate the market's own move, so
-   every test is also run without them and on them alone.
+</details>
 
-## Repository layout
-
-```
-scrapers/          one scraper per outlet, plus Tunindex prices
-preprocessing/     corpus, labels, sentiment model, features, hypothesis tests, unit tests
-audit/             data audit, pre-registration, AUDIT_REPORT.md (the full evidence chain)
-colab/             GPU notebook: CamemBERT training and yearly scoring, resumable
-docs/              PRD.md (scope and success criteria), architecture.md (pipeline reference)
-TsEDA.ipynb        time-series exploration of the analysis frame
-```
-
-## Reproducing
+## Run it
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-dvc pull                                   # restores data/ from DagsHub
-python3 -m pytest preprocessing            # 121 tests
+dvc pull                          # data from DagsHub
+python3 -m pytest preprocessing   # 121 tests
+python3 preprocessing/h3.py       # the H3 analysis, about 4 minutes on a CPU
 ```
 
-Main steps, run from the repository root:
+<details>
+<summary><strong>Full pipeline</strong></summary>
+
+<br>
 
 ```bash
 # corpus
 python3 preprocessing/clean.py && python3 preprocessing/relevance.py && python3 preprocessing/dedup.py
 
-# sentiment instrument (GPU; on Colab use colab/h3_camembert_v3.ipynb)
+# sentiment model (GPU; on Colab use colab/h3_camembert_v3.ipynb, which resumes after a disconnect)
 python3 preprocessing/camembert_clf.py --gold data/curated/sentiment_gold_v3.csv \
     --split data/curated/sentiment_gold_v3_split.csv --out data/curated/finetune/eval.json
 python3 preprocessing/score_corpus.py --model camembert --min-train 700 \
@@ -136,32 +195,39 @@ python3 preprocessing/score_corpus.py --model camembert --min-train 700 \
     --metadata data/curated/04_scored_v3_camembert_metadata.json
 
 # hypotheses
-python3 preprocessing/hypothesis_tests.py  # H1
-python3 preprocessing/outlet_ranking.py    # H2
-python3 preprocessing/h3.py                # H3, about 4 minutes on CPU
+python3 preprocessing/hypothesis_tests.py   # H1
+python3 preprocessing/outlet_ranking.py     # H2
+python3 preprocessing/h3.py                 # H3
+
+# audit and figures
+python3 audit/build_audit.py
+python3 docs/make_figures.py
 ```
 
-The data audit regenerates with `python3 audit/build_audit.py`.
+</details>
 
-## Limitations
+## Repository
 
-- **No Arabic, and English outlets are untested.** CamemBERT reads French only and scores
-  almost every English headline neutral, so the international-versus-domestic comparison
-  from the Turkish study could not be run. The obvious next step is an English-capable
-  model for the roughly 1,000 English headlines.
-- **Date-only timestamps.** Headlines carry no time of day, so news is only allowed to
-  predict the following session. Any same-day effect is invisible by design.
-- **Statistical power.** About 2,160 out-of-sample sessions. Effects smaller than the
-  stated minimum detectable effects would not show up.
-- **LLM-labelled training data.** Most gold labels come from language models; 1,800 come
-  from a model that may know how events turned out. Dates and sources were hidden from it,
-  and results are unchanged when the period it labelled is excluded.
-- **Firm prices stop in 2022**, which limits the crash panel to 2016–2022.
+```
+scrapers/        one scraper per outlet, plus Tunindex prices
+preprocessing/   corpus, labels, sentiment model, features, hypothesis tests, unit tests
+audit/           data audit, pre-registration, AUDIT_REPORT.md
+colab/           GPU notebook for training and scoring
+docs/            PRD, pipeline reference, README figure
+TsEDA.ipynb      time-series exploration
+```
 
-## Citation
+## Limits
+
+The English outlets are untested, and there is no Arabic source, so the comparison the
+Turkish study cared most about could not be made. Headlines have dates but no times, which
+hides any same-day reaction. About 2,160 test sessions cannot detect effects smaller than
+the thresholds in the table. Most training labels come from language models, and one of
+them may know how events turned out; leaving out the years it labelled does not change the
+results. Per-stock prices end in 2022.
+
+## Reference
 
 Ibrahim, Khan & Kaplan (2025). *Borsa Istanbul Review*, 25.
 
-## Author
-
-Yassine Ben Sassi
+<p align="center"><sub>Yassine Ben Sassi</sub></p>
