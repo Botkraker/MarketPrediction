@@ -893,7 +893,7 @@ off this repository and only its outputs were shipped.
 §0 — every section here must be reproducible by `python3 audit/build_audit.py` — and so
 this section is recorded as **PROVISIONAL**. The figures below are read from the
 committed metadata files, not recomputed. Restoring the producing scripts is milestone
-M1 in `PRD.md` and blocks every claim downstream of it.
+M1 in `docs/PRD.md` and blocks every claim downstream of it.
 
 ### 8h.1 The v2 gold set
 
@@ -1249,7 +1249,7 @@ instrument.
    high and low. 12 of them have zero volume, most on Tunisian public holidays, so
    `audit/trading_calendar.csv` still keeps some holidays as sessions, and `ret_next = 0`
    on the row before each is a fake target. (Supersedes "19 sessions are exactly flat"
-   in `architecture.md` §8.)
+   in `docs/architecture.md` §8.)
 2. **Zero volume is often missing data.** Two contiguous blocks, 2021-09-01..30 and
    2026-04-14..05-06, show zero volume with normal returns. `vol_chg_lag0`, a
    price-only baseline feature, carries a fill value on 73 sessions.
@@ -1260,7 +1260,7 @@ instrument.
    `sent_resid_lag1` and is unaffected.
 5. **Brent returns on filled sessions** are non-zero on 76 of 80 forward-filled rows,
    74 of them repeating the previous return. (Supersedes "mechanically 0.0" in
-   `architecture.md` §8; the macro builder has no committed script.)
+   `docs/architecture.md` §8; the macro builder has no committed script.)
 6. **Sentiment blackout.** No sentiment before 2016-01-04; the first 500-session
    training window lies entirely inside it, so `has_sent_lag1` acts as a 2016-onward
    dummy in every expanding window.
@@ -1354,3 +1354,83 @@ cannot be ruled out; robustness: rerun any result with the Haiku years' labels e
 (3) Subagent labelling is not regenerable bit-for-bit; the raw files are the record.
 (4) Label rates varied across the 17 subagents (positive 12%–46% per chunk); chunks mix
 years, so this adds noise rather than year-specific bias.
+
+## H3. Direction (drop / flat / rise) and firm drawdowns (2026-10-03)
+
+Pre-registered in `audit/PREREG_H3.md`, frozen at tag `prereg-h3-v1` before any H3
+model was fitted. Code: `preprocessing/h3.py` (committed before the run, tests in
+`test_h3.py`). Output: `data/curated/h3_results.json`. Sentiment: v3 CamemBERT
+probabilities (§8j). Window 2016-01-04 onward, 500-session warm-up, refit every 20
+sessions, embargo max(5, h). The 19 phantom sessions are removed.
+
+### H3a (primary): next-session direction, four arms
+
+Price-only baseline: 2,161 predictions (2018-01 → 2026-09), macro AUC 0.592, log-loss
+1.0790, predicted class shares 37 / 34 / 30% (no collapse). Positive Δ log-loss means
+news made the forecast worse.
+
+| arm | Δ log-loss [95% CI] | p (block bootstrap) | p (Holm) | MDE (80%) | Δ AUC [95% CI] | DM p |
+|---|---|---|---|---|---|---|
+| all | +0.0028 [−0.0003, +0.0060] | 0.095 | 0.19 | 0.0046 | −0.004 [−0.010, +0.001] | 0.088 |
+| ex_price | +0.0030 [+0.0000, +0.0060] | 0.052 | 0.19 | 0.0044 | −0.005 [−0.010, −0.000] | 0.059 |
+| placebo | +0.0030 [−0.0000, +0.0060] | 0.048 | 0.19 | 0.0043 | −0.004 [−0.009, +0.001] | 0.044 |
+| orthogonal | +0.0028 [−0.0003, +0.0060] | 0.095 | 0.19 | 0.0046 | −0.004 [−0.010, +0.001] | 0.087 |
+
+**Verdict under the pre-registered rule: INCONCLUSIVE.** No arm passes in either
+direction after Holm. Every point estimate says news slightly worsens the forecast,
+which is the direction H1 found (§8h.7), but none clears correction.
+
+**Design finding (post hoc).** The `orthogonal` arm reproduces `all` to the fourth
+decimal. In a linear model that already contains `ret_lag0`, `ret_lag1` and `log_n`,
+residualising tone on those same columns changes almost nothing (Frisch–Waugh). The
+arm adds no information here, and the same holds for H1's orthogonal arm. A useful
+version would residualise on controls that are *not* in the model.
+
+### H3b (secondary): 5 and 20 sessions
+
+| horizon | Δ log-loss [95% CI] | p (Holm) | MDE | Δ AUC |
+|---|---|---|---|---|
+| 5 | +0.0016 [−0.004, +0.008] | 0.67 | 0.008 | −0.001 |
+| 20 | −0.0055 [−0.017, +0.005] | 0.67 | 0.016 | +0.008 |
+
+Null at both. At h = 20 the model predicts "rise" 52% of the time against balanced
+training classes: the 2025 rally, not news.
+
+### H3c (secondary): firm drawdowns > 12% within 20 sessions
+
+77 tickers, 92,380 firm-session predictions (2018–2022), event rate 8.2%.
+
+| | price-only | + news |
+|---|---|---|
+| PR-AUC | 0.179 | 0.182 |
+| recall at the training-set 95th-percentile threshold | 18.1% | 18.9% |
+| realised alarm rate | 6.4% | 6.7% |
+| median lead time (sessions) | 15 | 16 |
+
+Δ PR-AUC +0.0025 [−0.003, +0.008], p 0.38, MDE 0.008: **null**. The price-only model
+itself carries information (PR-AUC 2.2× the event rate, about three weeks of lead).
+Probability *levels* are inflated by the balanced class weights (decile means 0.25–0.79
+predicted vs 0.04–0.22 observed); the *ranking* is monotone across deciles.
+
+### Robustness (§10 of the pre-registration; uncorrected)
+
+- `all` arm on 2019+ predictions only: Δ log-loss +0.0025, p 0.09. The Haiku-labelled
+  years do not drive the result.
+- v2 scores (labels, not probabilities), window starting 2019: Δ −0.0030, p 0.14.
+  Opposite sign, not significant, and not comparable one-to-one (different window,
+  warm-up and tone measure).
+
+### Deviations from the pre-registration
+
+1. The orthogonal arm is redundant by construction (above); it is reported as run.
+2. The crash alarm threshold is the 95th percentile of *training-set* probabilities;
+   the realised test alarm rate is 6.4–6.7%, not 5%.
+
+### Conclusion
+
+With a better instrument (human-eval QWK 0.680), sentiment usable from 2016, a
+probability target and a firm-level crash panel, news tone adds nothing measurable out of
+sample at any horizon. Every null is stated with its minimum detectable effect, so none
+of this shows that Tunisian news *cannot* predict the market. It shows that daily
+headline tone, measured this way, adds nothing that price history does not already
+carry. Price history alone gives a working three-week drawdown warning at the firm level.
