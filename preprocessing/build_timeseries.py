@@ -29,7 +29,7 @@ THREE THINGS IT FIXES, none of which are cosmetic:
    trade, with an explicit *_is_ffill flag so a stale value is never mistaken for
    an observation.
 
-`open` is never read. Returns are close-to-close (architecture-essentials rule 1).
+`open` is never read. Returns are close-to-close (docs/architecture.md §5, rule 1).
 """
 from __future__ import annotations
 

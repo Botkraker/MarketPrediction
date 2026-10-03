@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scrapers"))
 import scrape_ilboursa as S  # noqa: E402
 
 HTML = """<table id='tabQuotes'><tr>

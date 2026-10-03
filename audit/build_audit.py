@@ -60,7 +60,7 @@ BVMT_SCRAPER = {
     "bvmt_ohlcv": None,
     "bvmt_ticker_names": None,
     "bvmt_market_cap": None,
-    "bvmt_tunindex": "scrape_tunindex.py",
+    "bvmt_tunindex": "scrapers/scrape_tunindex.py",
 }
 
 BVMT_FILES = {
@@ -72,16 +72,16 @@ BVMT_FILES = {
 
 # Sources without a matching scrape_*.py script committed at all (gap to flag).
 SCRAPER_SCRIPT = {
-    "assabah": "scrape_assabah.py",
-    "economist_tunisia_all": "scrape_economist_tunisia.py",
-    "economist_tunisia_economy": "scrape_economist_tunisia.py",
-    "guardian_tunisia": "scrape_guardian.py",
-    "ilboursa": "scrape_ilboursa.py",
-    "kapitalis": "scrape_kapitalis.py",
-    "lapresse": None,  # no scraper script in repo
-    "leconomistmaghrebin": "leconomistemaghrebin_Scraper.py",
-    "nyt_economy": "scrape_nyt_economy.py",
-    "tap": "scrape_tap.py",
+    "assabah": "scrapers/scrape_assabah.py",
+    "economist_tunisia_all": "scrapers/scrape_economist_tunisia.py",
+    "economist_tunisia_economy": "scrapers/scrape_economist_tunisia.py",
+    "guardian_tunisia": "scrapers/scrape_guardian.py",
+    "ilboursa": "scrapers/scrape_ilboursa.py",
+    "kapitalis": "scrapers/scrape_kapitalis.py",
+    "lapresse": "scrapers/scrape_leconomistmaghrebin_lapresse.py",  # same script scrapes both outlets
+    "leconomistmaghrebin": "scrapers/scrape_leconomistmaghrebin_lapresse.py",
+    "nyt_economy": "scrapers/scrape_nyt_economy.py",
+    "tap": "scrapers/scrape_tap.py",
 }
 
 AR_MONTHS = {

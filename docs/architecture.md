@@ -411,19 +411,19 @@ sessions: never `.shift()` them.
 
 ```
 .
-├── PRD.md                         what and why
-├── architecture.md                this file
-├── architecture-essentials.md     the constraints, alone
-├── AGENTS.md                      working rules for any coding agent
-├── CLAUDE.md                      Claude-specific entry point
-├── README.md                      public-facing overview
-├── scrape_*.py                    acquisition
-├── preprocessing/                 stages 2–5 + 117 tests
+├── README.md                      overview, results, how to reproduce
+├── requirements.txt
+├── docs/
+│   ├── PRD.md                     what and why
+│   └── architecture.md            this file
+├── scrapers/                      acquisition (one script per outlet + Tunindex)
+├── preprocessing/                 stages 2–5, H3 harness, tests
 ├── audit/                         evidence chain; AUDIT_REPORT.md is the paper's spine
+├── colab/                         GPU notebook (CamemBERT training and yearly scoring)
 ├── data/                          DVC-tracked; never hand-edited
 ├── TsEDA.ipynb                    time-series EDA of the analysis frame (executed, outputs stored)
 └── main.ipynb                     scratch: 3 cells reading a leftover Turkish CSV
 ```
 
 `data/models/camembert_3class/` holds the saved CamemBERT (DVC). Run everything from the
-repo root. Tests: `python3 -m pytest preprocessing` (117 pass).
+repo root. Tests: `python3 -m pytest preprocessing` (121 pass).
