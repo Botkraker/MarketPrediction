@@ -1,0 +1,29 @@
+# Core pipeline (Python 3.12)
+pandas==2.3.3
+numpy==2.3.5
+pyarrow==21.0.0
+scipy==1.16.3
+scikit-learn==1.8.0
+statsmodels==0.14.5
+
+# Sentiment instrument and translation (GPU recommended; see colab/)
+torch==2.9.1
+transformers==4.57.6
+sentencepiece==0.2.2
+
+# Scrapers
+requests==2.32.5
+lxml==5.2.1
+curl_cffi
+
+# Audit
+duckdb==1.5.5
+langdetect==1.0.9
+fasttext==0.9.3
+matplotlib==3.10.0
+seaborn==0.13.2
+openpyxl==3.1.5
+
+# Data versioning and tests
+dvc==3.66.1
+pytest==9.1.1
