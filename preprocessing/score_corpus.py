@@ -77,14 +77,21 @@ def monotonicity_check(labelled: pd.DataFrame) -> dict:
                      "consider collapsing to 3 classes, which loses nothing measurable.")}
 
 
-def _fit(train: pd.DataFrame):
+MODELS = {"tfidf": "TfidfVectorizer(char_wb 2-5) + LogisticRegression(balanced)",
+          "camembert": "almanach/camembert-base fine-tuned, 3 classes (camembert_clf.py)"}
+
+
+def _fit(train: pd.DataFrame, model: str = "tfidf"):
+    if model == "camembert":
+        from camembert_clf import CamembertClassifier   # lazy: torch only when asked
+        return CamembertClassifier().fit(train.headline_clean, train.adjudicated_label)
     return build_model().fit(train.headline_clean, train.adjudicated_label)
 
 
 def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         split_path: Path = DEFAULT_SPLIT, output_path: Path = DEFAULT_OUTPUT,
         metadata_path: Path = DEFAULT_METADATA, mode: str = "expanding",
-        min_train: int = 200, freq: str = "YS") -> pd.DataFrame:
+        min_train: int = 200, freq: str = "YS", model: str = "tfidf") -> pd.DataFrame:
     if mode not in ("expanding", "static"):
         raise ValueError("mode must be 'expanding' or 'static'")
     gold = pd.read_csv(gold_path, keep_default_na=False)
@@ -103,8 +110,8 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
 
     unscored = 0
     if mode == "static":
-        model = _fit(train_pool)
-        corpus["sent_label"] = model.predict(corpus.headline_clean.astype(str))
+        fitted = _fit(train_pool, model)
+        corpus["sent_label"] = fitted.predict(corpus.headline_clean.astype(str))
         corpus["sent_model_train_end"] = "ALL (leaks)"
     else:
         corpus["sent_label"] = ""
@@ -119,8 +126,9 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
             if len(past) < min_train or past.adjudicated_label.nunique() < 2:
                 unscored += int(block.sum())      # left blank, never imputed
                 continue
-            model = _fit(past)
-            corpus.loc[block, "sent_label"] = model.predict(
+            fitted = _fit(past, model)
+            print(f"  {start.date()}: fit on {len(past):,} gold rows, scoring {int(block.sum()):,}", flush=True)
+            corpus.loc[block, "sent_label"] = fitted.predict(
                 corpus.loc[block, "headline_clean"].astype(str))
             corpus.loc[block, "sent_model_train_end"] = start.date().isoformat()
     corpus["sent_score"] = corpus.sent_label.map(LABEL_SCORE)
@@ -135,7 +143,9 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         "corpus": corpus_path.name,
         "rows_scored": int(len(scored)),
         "train_pool_rows": int(len(train_pool)),
-        "model": "TfidfVectorizer(char_wb 2-5) + LogisticRegression(balanced)",
+        "model": MODELS[model],
+        "gold": gold_path.name,
+        "split": split_path.name,
         "label_scale": LABEL_SCORE,
         "mode": mode,
         "leakage_free": mode == "expanding",
@@ -147,7 +157,12 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         "provisional": True,
         "warning": ("Labels derive from a single 7B annotator under PROMPT_V1, which "
                     "did not define the task (AUDIT_REPORT 8d). These scores are a "
-                    "pipeline demonstration, NOT a sentiment measurement."),
+                    "pipeline demonstration, NOT a sentiment measurement."
+                    if any("v1" in v for v in prompt_versions_used(labelled)) else
+                    "Labels are PROMPT_V2, two local annotators (qwen2.5-7b, ministral-8b) "
+                    "with a 150-row human anchor; qwen breaks model ties, which decides "
+                    "~28% of rows (AUDIT_REPORT 8h). Grade the classifier against the "
+                    "human evaluation split before treating these scores as a measurement."),
         "label_distribution": scored.sent_label.value_counts()
                                     .reindex(LABELS, fill_value=0).astype(int).to_dict(),
     }
@@ -161,8 +176,14 @@ def main() -> None:
     parser.add_argument("--mode", choices=("expanding", "static"), default="expanding",
                         help="expanding = leakage-free refit; static LEAKS, diagnostic only")
     parser.add_argument("--min-train", type=int, default=200)
+    parser.add_argument("--model", choices=sorted(MODELS), default="tfidf")
+    parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)
+    parser.add_argument("--metadata", type=Path, default=DEFAULT_METADATA)
     args = parser.parse_args()
-    scored = run(output_path=args.output, mode=args.mode, min_train=args.min_train)
+    scored = run(gold_path=args.gold, split_path=args.split, output_path=args.output,
+                 metadata_path=args.metadata, mode=args.mode, min_train=args.min_train,
+                 model=args.model)
     blank = int((scored.sent_label == "").sum())
     print(f"mode={args.mode}  scored {len(scored)-blank:,} of {len(scored):,} headlines"
           f"  ({blank:,} left unscored: insufficient prior labels)")

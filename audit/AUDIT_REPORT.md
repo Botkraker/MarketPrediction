@@ -1,5 +1,18 @@
 # Data Audit Report — raw-v1
 
+**Revision 2026-09-30:** §8i added — the fine-tuned CamemBERT and the translation step
+now have producing scripts and reproduce the committed outputs within seed noise; the
+2016–18 sentiment is shown to come from under-trained yearly models; a per-headline
+English series is built; the first per-outlet H2 run is reported; and seven data
+defects found by the time-series EDA are recorded. §8h's provenance warning is
+narrowed accordingly (see the note at its head).
+
+**Revision 2026-09-28:** §8h added — gold set v2, three-annotator agreement with a
+150-row human anchor, the sentiment-instrument bake-off, three macro controls, and the
+H1 re-run. §8h is flagged **PROVISIONAL**: its artifacts arrived as a data-only commit
+with no producing script, so it is the one section here that `build_audit.py` cannot
+regenerate.
+
 **Revision 2026-09-20:** §6b added (wrong-country check — `assabah` is Moroccan, excluded);
 §8 and §9 corrected, then §8b added once step 6 was actually implemented and run. Everything else is the original raw-v1 text.
 
@@ -860,6 +873,409 @@ No price-report confound control, orthogonalised arm, Holm correction, power
 analysis, Diebold-Mariano test, wrong-country provenance check or parameter
 sensitivity grid appears in the blueprint. Each came out of the audit or the
 adversarial review, and several caught real defects the blueprint would not have.
+
+## 8h. Gold set v2, the sentiment instrument, and macro controls (2026-09-28)
+
+### Provenance warning — read this before citing anything below
+
+> **Update 2026-09-30 (§8i):** two of the orphaned families now have producing scripts —
+> the CamemBERT fine-tune (`preprocessing/camembert_clf.py`, §8i.1) and the translation
+> step (`preprocessing/translate_headlines.py`, §8i.4). Both reproduce the committed
+> figures within seed noise, not bit-for-bit. Everything else below is still
+> provisional in the sense stated here.
+
+Every artifact in this section arrived in commit `f00134c` as a **data-only** change:
+`.vscode/settings.json` and `data.dvc`, 42 new files under `data/curated/`, and **no
+code**. The metadata records Windows paths (`C:\Users\LENOVO\...`), so the work was done
+off this repository and only its outputs were shipped.
+
+**No script in this repository regenerates any of it.** That breaks the rule stated in
+§0 — every section here must be reproducible by `python3 audit/build_audit.py` — and so
+this section is recorded as **PROVISIONAL**. The figures below are read from the
+committed metadata files, not recomputed. Restoring the producing scripts is milestone
+M1 in `PRD.md` and blocks every claim downstream of it.
+
+### 8h.1 The v2 gold set
+
+`data/curated/sentiment_gold_v2_full.csv`, 2,930 rows, sampled from a 2,870-row eligible
+pool stratified by source × publication year, one row per exact duplicate cluster.
+
+Exclusions applied at sampling:
+
+| Excluded | n | Why |
+|---|---|---|
+| `not_in_study` | 68 | The Moroccan `assabah::*` rows |
+| `annotation_pilot` | 60 | Already used in §8f |
+| `prompt_v2_example` | 2 | Worked examples inside `PROMPT_V2`, excluded so they cannot leak |
+
+This **resolves the decision left open on 2026-09-20**. The 68 Moroccan rows that had
+leaked into the v1 gold set as its entire `ar` stratum are excluded from v2 by the
+eligible-pool filter rather than deleted, which is the cheapest fix that destroys
+nothing and was the one recommended.
+
+**The §8d prompt gate is passed.** v1 produced 9.4% `neutral`; v2 produces **52.8%**
+(1,546 of 2,930). The gate was explicit: if v2 failed to move the neutral share
+substantially upward, the binding constraint was model capability rather than prompt
+wording. It moved by 43 percentage points. **The wording was the constraint.**
+
+Final label distribution: neutral 1,546 · positive 916 · negative 439 ·
+very_negative 27 · very_positive 2.
+
+The two extreme classes are now so thin that the 5-point scale cannot be estimated.
+This is recorded, not fixed: the 3-class collapse loses nothing measurable (§8e, R3b).
+
+### 8h.2 Three annotators, and the first human labels
+
+| Annotator | Model | Rows |
+|---|---|---|
+| 1 | `qwen2.5-7b-instruct-1m` | 2,930 |
+| 2 | `ministral-8b-instruct-2410` | 2,930 |
+| 3 | **human** | 150 |
+
+| Pair | n | raw | κ nominal | κ linear | **κ quadratic** |
+|---|---|---|---|---|---|
+| qwen vs ministral | 1,930 | 0.703 | 0.460 | 0.515 | **0.597** moderate |
+| qwen vs human | 150 | 0.713 | 0.545 | 0.608 | **0.689** substantial |
+| ministral vs human | 150 | 0.713 | 0.464 | 0.507 | **0.571** moderate |
+
+Fleiss nominal across all three: 0.486, "moderate"; 85 of 150 rows unanimous.
+
+The §8f pattern **reproduces at scale**: the nominal statistic is roughly two-thirds of
+the quadratic one in every pair. Disagreement is about *level*, agreement about
+*direction*. Report the ordinal-weighted figure; nominal Fleiss understates a gold set
+whose scale is ordinal.
+
+Note the ranking: **qwen agrees with the human more than ministral does**, and more than
+the two models agree with each other. The smaller model is not the weaker annotator here.
+
+This also supersedes the §8f caveat that the two annotators had used different prompts,
+confounding model with prompt. All three v2 annotators work from `PROMPT_V2`.
+
+### 8h.3 Adjudication composition
+
+| Method | n | Share |
+|---|---|---|
+| majority of the two models | 1,970 | 67.2% |
+| **tiebreak by annotator 1 (qwen)** | 810 | **27.6%** |
+| human label taken directly | 150 | 5.1% |
+
+**27.6% of the gold set is qwen's opinion with a majority-vote label on it.** Where the
+two models split, qwen decides. This is a disclosed weakness of the instrument and must
+appear in any write-up of it; it is the single largest reason the labels remain
+provisional.
+
+### 8h.4 Frozen split
+
+2,339 train / 441 validation / **150 evaluation**, seed 20260919, fingerprint
+`id_sha256 = 5c429fd8aa2e…`.
+
+The evaluation split **is** the human-labelled subset. That is a deliberate design
+change from v1's random stratification: the instrument is now graded against humans
+rather than against other models. It is the only ground truth in this project and must
+never be trained on.
+
+Language: 2,287 fr / 52 en train; 141 fr / 9 en evaluation. Still no Arabic (§8e, S5).
+
+### 8h.5 Model bake-off
+
+Held-out validation, 3-class, n=441, majority floor 0.524.
+
+| Model | QWK | Accuracy | macro F1 | Cost |
+|---|---|---|---|---|
+| TF-IDF + logistic (the §8e bar) | 0.561 | 0.698 | 0.670 | — |
+| FinBERT zero-shot, **raw French** | **0.021** | 0.517 | 0.249 | — |
+| FinBERT zero-shot, translated | 0.503 | 0.626 | 0.611 | + translation |
+| FinBERT + trained head, translated | 0.604 | 0.669 | 0.664 | + translation |
+| XLM-R fine-tuned | 0.589 | 0.705 | 0.698 | 108 min |
+| **CamemBERT fine-tuned** | **0.708** | 0.735 | 0.732 | **4.9 min** |
+
+On the human evaluation split (n=150, floor 0.567): CamemBERT QWK **0.635**,
+accuracy 0.660, MCC-equivalent κ 0.488, per-seed QWK 0.586 / 0.644 / 0.593.
+
+Three findings worth carrying into the write-up:
+
+1. **FinBERT on raw French is at chance** — κ = 0.0005, macro F1 0.249. A
+   finance-domain English encoder reads French headlines as noise. Translation recovers
+   it entirely (0.021 → 0.503 zero-shot), so the translation step, not the domain
+   pre-training, is doing the work.
+2. **Monolingual beats multilingual on a 97%-French corpus.** CamemBERT 0.708 against
+   XLM-R 0.589, at **22× less training time**.
+3. **The TF-IDF ceiling was capacity, not labels.** §8e left this open: if a transformer
+   only matched TF-IDF, the binding constraint was label quality and no GPU would fix
+   it. CamemBERT clears it by 0.147 QWK. The labels were good enough to learn from; the
+   linear model was not good enough to learn them.
+
+Ensembling TF-IDF with the transformer helps accuracy marginally (0.748) and **hurts**
+QWK (0.692). Report the single model.
+
+### 8h.6 Macro controls — three tested, three rejected
+
+Extending the §8g method (next-session OLS, Newey-West 5 lags, from 2014-01-01,
+`enters_f1` iff p < 0.05) to the two channels §8g left untested.
+
+| Candidate | Coverage | next-session r | R² | p (HAC) | Enters F1 |
+|---|---|---|---|---|---|
+| Brent spot (EIA) | 100% | +0.024 | 0.0006 | 0.433 | no |
+| EuroStoxx 50 | 100% | +0.062 | 0.0038 | 0.072 | no |
+| EUR/TND (BCT) | 100% | +0.004 | 0.00002 | 0.810 | no |
+
+Against `ret_lag0` at R² = 0.0691, the strongest candidate is **18× weaker** and misses
+significance. The EU demand channel — §8g's more plausible remaining hypothesis, since
+the EU takes ~70% of exports and tourism — comes closest (p = 0.072) but does not clear
+the bar, and only on the same session (p = 0.008), which is not usable for prediction.
+
+All three do show a weak link to **volatility**: |next return| p = 0.022 (Brent) and
+0.020 (EuroStoxx). Magnitude, not direction. Consistent with §8c.
+
+**Blueprint §5.2's F1 rung is now measured on all three channels and declined on all
+three.** This is a documented deviation supported by evidence, not a gap. The power
+argument in §8g applies with more force: at MDE 3.2pp, spending degrees of freedom on
+R² ≈ 0.0006 controls makes a true effect harder to detect.
+
+### 8h.7 H1 re-run
+
+The baseline **improved** — `vol_chg_lag0` and four day-of-week dummies were added,
+closing two of §8g's outstanding F0 gaps:
+
+| | AUC | balAcc | MCC | Brier | Accuracy |
+|---|---|---|---|---|---|
+| price-only (F0) | **0.6074** | 0.5675 | 0.141 | 0.2801 | 0.5818 |
+| + sentiment, `all` | 0.6016 | 0.5632 | 0.133 | 0.2830 | 0.5788 |
+| + sentiment, `ex_price` | 0.6026 | 0.5651 | 0.137 | 0.2825 | 0.5807 |
+| + sentiment, `placebo` | 0.6036 | 0.5723 | 0.151 | 0.2820 | 0.5863 |
+| + sentiment, `orthogonal` | 0.6046 | 0.5609 | 0.128 | 0.2815 | 0.5758 |
+
+**Every arm is below the baseline on AUC.** Holm-adjusted sign tests: nothing
+significant (lowest adjusted p = 0.131, `orthogonal`). Diebold-Mariano on squared-error
+loss of returns finds the degradation **significant** in 3 of 4 arms — `all` p = 0.039,
+`ex_price` p = 0.038, `placebo` p = 0.036 — with `orthogonal` at p = 0.076. OOS R² falls
+from 0.0615 to 0.053–0.057 in every arm.
+
+New in this run: **block-bootstrap ΔAUC** (2,000 resamples, block length 20), which
+§8g listed as outstanding. For `all`: ΔAUC −0.0058, CI95 [−0.0123, +0.0001],
+p = 0.054, Holm 0.216.
+
+Power is unchanged in substance: 933 discordant pairs, MDE at 80% power **3.2pp**,
+`adequately_powered: false`.
+
+**Verdict: H1 REJECTED, not merely unsupported.** The sign test is null and the
+better-powered continuous test says the sentiment features make the forecast worse.
+
+### 8h.7b Two documented figures corrected on recomputation (2026-09-28)
+
+**The price-report share is 3.74%, not 10%.** §8d states "4,244 of 42,645 relevant
+headlines (10.0%)", with ilboursa 11.9%, kapitalis 11.2%, leconomistmaghrebin 9.3%.
+Recomputing `config.PRICE_REPORT_PATTERN` against the 46,013 canonical rows gives
+**1,722 = 3.74%** — ilboursa 3.30%, kapitalis 4.71%, leconomistmaghrebin 4.62%, French
+3.83%, English 0.00%.
+
+The cause is a regex change, not a row-set change. Commit `f1177e0` introduced both the
+v1 flat-alternation pattern and the 10% figures; commit `7ed9c0c` ("Address adversarial
+methodology review") replaced the pattern with the v2 co-occurrence lookahead — §8e, S1 —
+and edited the pattern while leaving the percentages in the comment above it. Running v1
+on the pre-dedup, pre-issuer 42,135-row corpus reproduces 10.42% / 11.92% / 12.48% /
+9.24%, which is where §8d's numbers come from.
+
+The v2 pattern is the better one — it correctly stopped flagging bond issues, air-traffic
+statistics and company earnings that merely contain `en baisse de`. But it under-flags on
+brittle literals: `en hausse` misses "en petite hausse", `séance du` misses "séances", and
+`démarre`/`évolue` are not in the verb list. 1,565 canonical rows carry an index token
+with no move verb. **3.74% is therefore a floor, and the placebo arm is built on fewer
+rows than §8d implies.** Zero English rows flagged is correct, not a gap: exactly one of
+the 1,036 English canonical rows contains any index token at all.
+
+Stale copies remain in `preprocessing/config.py:136`, `README.md` and §8d above. They are
+left in place rather than silently rewritten, per the rule that the evidence chain records
+corrections rather than overwriting history.
+
+**The |return| autocorrelation +0.387 is window-specific.** It holds on the 2014+ sample
+(recomputed +0.3868); on the full 4,167-session 2010+ sample it is **+0.4438**. The
+signed-return figure +0.263 is robust (+0.2637 vs +0.2732 full-sample).
+
+### 8h.8 What this does and does not establish
+
+**Does:** the v2 prompt fixed the neutral collapse; a fine-tuned monolingual encoder is
+a materially better instrument than TF-IDF; agreement is moderate-to-substantial on the
+ordinal scale with a human anchor; three macro channels are measured and declined.
+
+**Does not:** that news sentiment cannot predict Tunindex. What is rejected is that
+*these daily aggregates, built from this instrument, over this window* add anything to
+price lags. Three confounds remain live — 27.6% of labels are a qwen tiebreak, the
+daily aggregation discards intra-day ordering, and the design is underpowered on the
+sign test.
+
+**Unresolved and blocking:** `hypothesis_results.json` does not record which scored
+corpus fed it, and `features.py:46` still defaults to `04_scored.parquet` — the **v1**
+file dated 2026-09-20 — while `04_scored_v2.parquet` and `04_scored_v2_camembert.parquet`
+sit beside it. Until provenance is recorded, §8h.7 cannot be attributed to a specific
+instrument.
+
+## 8i. Instrument and translation reproduced; headline series; per-outlet H2 (2026-09-30)
+
+Every figure in this section comes from a **committed script**, named in each
+subsection, and was recomputed on 2026-09-29/30. None of it is regenerated by
+`build_audit.py`; the named script is the reproducibility path. Figures credited to
+`TsEDA.ipynb` come from the executed time-series EDA notebook at the repo root.
+
+### 8i.1 The CamemBERT fine-tune, reproduced (`preprocessing/camembert_clf.py`)
+
+The recipe is taken from the committed metadata: `almanach/camembert-base`, 3 classes
+(`very_*` collapsed into their neighbour), 5 epochs, 3 seeds with probabilities
+averaged, 15% of the training rows held out as a dev set. The metadata does **not**
+record learning rate, batch size, max length or weight decay; those were set to
+2e-5 / 16 / 64 / 0.01 and are written into every output as guesses.
+
+Trained on the 2,339-row train split, graded on the 150-row **human** evaluation split:
+
+| | Original (off-repo) | Reproduced |
+|---|---|---|
+| QWK | 0.6349 | **0.6178** |
+| Accuracy | 0.660 | 0.687 |
+| Nominal κ | 0.4876 | 0.4961 |
+| Per-seed QWK | 0.586 / 0.644 / 0.593 | 0.589 / 0.617 / 0.544 |
+| Majority floor | 0.567 | 0.567 |
+
+The 0.017 QWK gap is inside the seed spread. The reproduced file's `macro_f1`
+(0.406) averages over all five `LABELS`, two of them empty after the collapse, so it
+is **not** comparable with the original's 0.669. Output:
+`data/curated/finetune/camembert_3class_evaluation_repro.json`.
+
+### 8i.2 The yearly models before 2019 are under-trained — 2016–18 is not a measurement
+
+`score_corpus.py --model camembert --mode expanding --min-train 200` reruns the
+leakage-free yearly refit: 39,692 of 46,013 headlines scored, 6,321 unscored.
+Output: `04_scored_v2_camembert_repro.parquet`.
+
+| Year scored | Gold rows the model saw | negative | positive | neutral |
+|---|---|---|---|---|
+| 2016 | 298 | 0% | 0% | **100%** |
+| 2017 | 441 | 0% | 18% | 82% |
+| 2018 | 582 | 0% | 41% | 59% |
+| 2019 | 724 | 11% | 32% | 57% |
+| 2020–26 | 893–2,128 | 9–22% | 29–35% | remainder |
+
+Below ~700 training rows the model never predicts `negative`. From 2019 the
+reproduction agrees with the committed `04_scored_v2_camembert.parquet` on 81–86% of
+labels per year (74% overall), which is seed-level agreement.
+
+The committed scores fail in the same years by a different route. On price-report
+headlines — which restate the move of the session they describe, so a working
+instrument must agree with that move's sign — `TsEDA.ipynb` §B1 finds sign agreement
+**0.468** (n=348) in 2016–18 against **0.877** (n=725) from 2019, and a placebo
+correlation with `ret_lag1` of ~0.000 against **+0.491**. The 2019 boundary was first
+chosen **post hoc** from that table; it is now also motivated independently, as the
+first year whose model saw more than 700 gold rows.
+
+**Consequence for §8h.7.** About 28% of H1's 2,678 walk-forward predictions fall in
+2016–18, where the sentiment features are noise. H1 has **not** been rerun. Pending
+decision: rescore with `--min-train` ≈ 700 (sentiment starts 2019) and rerun H1 on
+that window, declared as a post-hoc restriction.
+
+### 8i.3 The saved model and the static fill — descriptive only
+
+`camembert_clf.py --save data/models/camembert_3class` trains on train + validation
+(2,780 rows, the 150 evaluation rows asserted absent) and saves 3 seeds (1.3 GB,
+DVC). `--score-corpus` scores every relevant headline with it →
+`04_scored_v2_camembert_static.parquet`, metadata `leakage_free: false`. That model
+saw gold labels up to 2026 and scores ~2,780 headlines in-sample. It exists only to
+fill the pre-2019 rows of the headline series (§8i.5), tagged
+`sent_source = saved_model`. **It never enters a result.**
+
+### 8i.4 The translation step, reproduced (`preprocessing/translate_headlines.py`)
+
+`finbert_head_results.json` records `translator_revision: c4aed37b…`, which matches
+the Hugging Face commit history of **`Helsinki-NLP/opus-mt-fr-en`**; the script pins
+that revision. Local GPU, no API.
+
+| Check | Result |
+|---|---|
+| `--check-gold` vs the committed gold translations | **2,835 / 2,857 identical (99.23%)**; the rest are small wording variants |
+| Full corpus | 46,013 rows: 44,977 translated, 1,036 English passed through; 41 min on a GTX 1650 |
+| Digits preserved (ordinals excluded) | 99.88% of French rows |
+| Degenerate outputs (loops, truncation after `\|`) | 15 detected and retranslated by segment; 1 still flagged `translation_suspect` (a false positive) |
+
+Known limits: French decimal commas are kept verbatim ("un dividende de 4,500 dinars"
+= 4.5 dinars reads in English as four thousand five hundred); and `normalize.py` leaves
+U+FFFC in 3 `headline_clean` values — an upstream defect, not fixed because it would
+move dedup counts. Incremental: the output is its own cache, keyed on model revision.
+
+### 8i.5 The per-headline series (`preprocessing/build_headline_series.py`)
+
+`data/curated/tunindex_headline_series.csv`: 45,706 rows (one per headline), 3,179
+sessions, 2014-01-02..2026-09-16. English `headline`, `source`, original `lang`,
+CamemBERT `sent_label`/`sent_score`, `sent_source`, and the session's `close`, `ret`,
+`ret_next`. Alignment is `map_to_next_session(side="right")`, unchanged.
+`sent_source`: `yearly_refit` 30,858 rows (2019+, leakage-free), `saved_model` 14,848
+(before 2019, look-ahead). Asserts on every run: headlines per session equal
+`n_headlines` in `tunindex_timeseries.csv`; every row has English text; no
+`yearly_refit` headline is scored by a model fitted after its publication.
+
+### 8i.6 First per-outlet H2 run (`preprocessing/outlet_ranking.py`)
+
+2019+ only, `yearly_refit` rows only: 1,927 sessions, 1,426 walk-forward predictions
+(`min_train` 500, `refit_every` 20, embargo 5). Each outlet enters as its daily mean
+score plus a `has_<outlet>` indicator. Tested only with ≥ 100 sessions of news **and**
+≥ 10% non-neutral headlines.
+
+Linear model (regress, take the sign); price-only baseline AUC **0.5981**; all outlets
+together 0.5969, DM p = 0.57.
+
+| Outlet | Sessions | In-sample weight (HAC t) | ΔAUC add-one | DM p (Holm) | LOO ΔAUC |
+|---|---|---|---|---|---|
+| leconomistmaghrebin | 1,822 | +0.044 (2.23) | +0.0024 | 1.00 | +0.0036 |
+| ilboursa | 1,913 | −0.042 (−2.02) | +0.0013 | 1.00 | +0.0020 |
+| lapresse | 448 | +0.089 (2.41) | −0.0022 | 1.00 | −0.0006 |
+| kapitalis | 1,839 | +0.004 (0.23) | −0.0042 | **0.036, worse** | −0.0046 |
+
+- **Price reports removed:** the ranking is unchanged; kapitalis is still the worst but
+  Holm p = 0.10.
+- **Gradient boosting** (`baseline.walk_forward(kind="gbm")`, new): baseline AUC
+  0.5695, below the linear model's; no outlet is significant.
+- **Not tested:** economist_tunisia_all (89 sessions), tap (20).
+- **Not testable — the instrument is blind on English:** in 2019+ CamemBERT scores
+  Guardian 162/162, NYT 207/210 and Economist 95/97 headlines `neutral`. Their
+  sentiment column is a constant.
+
+**Reading.** No outlet's sentiment adds out of sample, and in-sample weights of
+|t| ≈ 2 do not survive the walk-forward. With 1,426 predictions this is
+**INCONCLUSIVE**, not evidence that outlets are interchangeable. The one surviving
+result is negative: kapitalis degrades the forecast. H2's international-vs-domestic
+comparison cannot be run until the English outlets are scored by an English-capable
+instrument.
+
+### 8i.7 Data defects found by the time-series EDA (`TsEDA.ipynb`) — recorded, none fixed
+
+1. **Phantom sessions.** The 19 zero-return sessions copy the previous row's close,
+   high and low. 12 of them have zero volume, most on Tunisian public holidays, so
+   `audit/trading_calendar.csv` still keeps some holidays as sessions, and `ret_next = 0`
+   on the row before each is a fake target. (Supersedes "19 sessions are exactly flat"
+   in `architecture.md` §8.)
+2. **Zero volume is often missing data.** Two contiguous blocks, 2021-09-01..30 and
+   2026-04-14..05-06, show zero volume with normal returns. `vol_chg_lag0`, a
+   price-only baseline feature, carries a fill value on 73 sessions.
+3. **Look-ahead in the orthogonal arm.** `features.py:127–135` fits the residualisation
+   coefficients on the whole frame, test period included (4 coefficients).
+4. **`sent_resid_price_only_lag1`** is non-zero on 1,507 of 1,508 sessions where the
+   placebo has no data: the 0-filled input was residualised. H1's orthogonal arm uses
+   `sent_resid_lag1` and is unaffected.
+5. **Brent returns on filled sessions** are non-zero on 76 of 80 forward-filled rows,
+   74 of them repeating the previous return. (Supersedes "mechanically 0.0" in
+   `architecture.md` §8; the macro builder has no committed script.)
+6. **Sentiment blackout.** No sentiment before 2016-01-04; the first 500-session
+   training window lies entirely inside it, so `has_sent_lag1` acts as a 2016-onward
+   dummy in every expanding window.
+7. **Weekday effect.** Next-session up-share is 0.609 on Fridays against 0.499 on
+   Tuesdays (χ² p ≈ 0.001, uncorrected), partly the 2025 drift. Exploratory.
+
+### 8i.8 What is still orphaned
+
+**Closed in this revision:** the fine-tuned CamemBERT (code exists; the committed
+`04_scored_v2_camembert.parquet` is matched within seed noise, not regenerated
+bit-for-bit) and the translation step (99.23% identical).
+
+**Still orphaned:** the v2 gold-set construction, the XLM-R fine-tune, the FinBERT
+head, the macro controls, the three `sent_resid_*_lag1` columns, and the build that
+produced the committed `daily_features.parquet`.
 
 ## 9. Explicit blocked/skipped items (for transparency)
 

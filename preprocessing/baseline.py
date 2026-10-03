@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import (balanced_accuracy_score, brier_score_loss,
                              matthews_corrcoef, roc_auc_score)
@@ -80,6 +81,12 @@ def walk_forward(frame: pd.DataFrame, features: list[str],
                 model = make_pipeline(StandardScaler(),
                                       LogisticRegression(max_iter=1000, C=1.0))
                 model.fit(X[:cut], y[:cut])
+            elif kind == "gbm":
+                # Nonlinear check: can thresholds/interactions find what the linear
+                # model cannot? Shallow and slow-learning because the signal is tiny.
+                model = HistGradientBoostingRegressor(max_depth=3, learning_rate=0.05,
+                                                      max_iter=200, random_state=0)
+                model.fit(X[:cut], target[:cut])
             else:
                 # Regress the RETURN and take the sign. Classifying the direction
                 # throws away magnitude, and the binary label is dominated by the
