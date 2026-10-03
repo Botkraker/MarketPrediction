@@ -110,6 +110,18 @@ price-report figures in `config.py:136`, README and §8d; no dependency manifest
    point, which is correct only while the target horizon ≤ embargo. With h=20 and
    embargo 5, training targets would overlap the test target.
 
+## Done since Phase 0 (2026-10-03)
+
+- **Claude labels approved** as training labels (CamemBERT stays the scorer). Haiku on the
+  human 150: QWK3 0.756 vs qwen 0.676.
+- **Gold v3:** +1,800 Haiku labels for 2014–18 (`gold_haiku.py`).
+- **Instrument v3** (Colab): human-eval QWK **0.680** (v2 0.618); yearly scores
+  `04_scored_v3_camembert.parquet` valid from **2016**, with probabilities.
+  AUDIT_REPORT §8j.
+- Phase 2's "use probabilities" and "yearly-refit discipline" items are therefore done;
+  per-outlet/per-year F1 and the relevance tag remain.
+- **Not versioned yet:** `dvc add data` still pending (now also gold v3 and the v3 scores).
+
 ## Ranked plan (waterfall, one checkpoint each)
 
 1. **Phase 1, pre-registration.** `audit/PREREG_H3.md`, committed and tagged before any

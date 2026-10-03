@@ -34,7 +34,11 @@ Balanced accuracy and MCC replace raw accuracy. At a 54.9% base rate accuracy is
 blind: "AUC 0.607 against a 0.5 null" says far more than "0.582 vs 0.549". For the
 sentiment classifier, report **QWK**, not accuracy — 53% of labels are one class.
 
-**6. Scoring is leakage-free or it is not a result — and before 2019 it is not a result either.**
+**6. Scoring is leakage-free or it is not a result — and before 2016 it is not a result either.**
+**Update 2026-10-03 (§8j):** gold v3 adds 1,800 Haiku labels for 2014–18; the v3 yearly
+scores (`04_scored_v3_camembert.parquet`, `--min-train 700`) are valid from **2016**
+(price-report sign agreement 0.872 in 2016–18 vs 0.532 under v2). The text below
+describes the v2 scores.
 `score_corpus.py --model camembert --mode expanding` refits on gold rows strictly
 before each year. 6,321 headlines have no prior labels and stay **unscored**. Never
 impute them. `--mode static` exists only to quantify the difference.
@@ -79,7 +83,8 @@ every file in it must be regenerable by a committed script.
 | Gold set v2 | 2,930 rows · 2,339 / 441 / 150 |
 | Evaluation split | the 150 **human**-labelled rows |
 | Best sentiment instrument | CamemBERT · val QWK 0.708 · human-eval QWK 0.635 (off-repo) / **0.618 reproduced** by `camembert_clf.py` |
-| Usable sentiment window | **2019-01 onward** (first yearly model with > 700 gold rows) |
+| Usable sentiment window | **2016-01 onward** with gold v3 (§8j); 2019-01 with the v2 scores |
+| Instrument, gold v3 | CamemBERT human-eval QWK **0.680** (v2: 0.618) |
 | Price-only baseline | **AUC 0.6074** · balAcc 0.5675 · MCC 0.141 |
 | Always-up constant | 0.5493 over 2,678 predictions |
 | Return autocorrelation | +0.263 (\|ret\| +0.387) — **2014+ window**; full 2010+ sample is +0.273 / +0.444 |

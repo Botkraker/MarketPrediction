@@ -1287,3 +1287,70 @@ produced the committed `daily_features.parquet`.
   run** — same reason; calendar-day proxies were substituted and labeled as such throughout.
 - Live-site spot checks (step 5) and hand-labeling (step 8): **template generated, not filled
   in** — these require a human with a browser and judgment calls the audit shouldn't fabricate.
+
+## 8j. Gold v3: Haiku labels for 2014–18, and sentiment usable from 2016 (2026-10-03)
+
+**Why.** §8i.2: the yearly models for 2016–18 saw 298–582 gold rows and collapsed. The
+binding constraint was labels before 2019, not the model.
+
+**Annotator check, before any labelling.** Claude Haiku 4.5, run as a Claude Code
+subagent under `PROMPT_V2`, labelled the 150 human-evaluation headlines from text alone
+(no date, no source). Agreement with the human labels, 3-class quadratic κ, bootstrap
+95% CI: **Haiku 0.756 [0.665, 0.831]**, qwen 0.676 [0.563, 0.772], ministral 0.565
+[0.413, 0.690]. Haiku caught 36/36 human negatives; its systematic error is
+neutral→positive (28 of 85 human-neutral rows, growth vocabulary). Those 150 Haiku
+labels were **not** added to the gold set: the evaluation split is never trained on.
+
+**Labelling.** `preprocessing/gold_haiku.py`: 1,800 canonical relevant headlines,
+2014: 300 · 2015: 350 · 2016: 400 · 2017: 400 · 2018: 350 (100 of them a pre-2019 pilot),
+excluding every duplicate cluster of a v2 gold row. 17 parallel Haiku subagents, 100 rows
+each, chunks mixing years. Labels: neutral 917 · positive 520 · negative 323 ·
+very_negative 21 · very_positive 19. All Haiku rows go to `train`; validation and the
+150-row evaluation split are unchanged. → `sentiment_gold_v3{,_split}.csv`, 4,730 rows.
+Raw label files: `data/curated/haiku_labels/`.
+
+**Instrument, graded on the human 150** (`camembert_clf.py --gold sentiment_gold_v3.csv`,
+Colab T4):
+
+| CamemBERT trained on | QWK | accuracy | κ nominal | per-seed QWK |
+|---|---|---|---|---|
+| gold v2 (§8i.1 reproduction) | 0.618 | 0.687 | 0.496 | 0.589 / 0.617 / 0.544 |
+| **gold v3** | **0.680** | **0.747** | **0.593** | 0.613 / 0.681 / 0.689 |
+
+Every v3 seed is at or above the best v2 seed. With n = 150 the CI on each QWK is about
+±0.08; "at least as good, probably better" is the defensible claim.
+
+**Yearly scoring** (`score_corpus.py --model camembert --min-train 700 --gold
+sentiment_gold_v3.csv`, resumable per-year cache) → `04_scored_v3_camembert.parquet`,
+with class probabilities `p_negative/p_neutral/p_positive`. 39,692 scored; everything
+before 2016 is unscored (the 2015 model would see < 700 rows). 0 headlines scored by a
+model whose training cutoff is after their publication date.
+
+| year | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| negative | 17.7% | 18.2% | 18.6% | 17.3% | 25.6% | 21.1% | 21.8% | 19.7% | 13.8% | 11.2% | 11.6% |
+| neutral | 58.8% | 51.9% | 52.6% | 54.9% | 48.5% | 51.0% | 51.9% | 52.7% | 59.4% | 63.0% | 59.7% |
+
+The 2016–18 collapse is gone. **Validity check** — price-report headlines restate the
+session's own move, so a working instrument must agree with its sign (non-neutral
+labels, same-session return, sessions with ret ≠ 0):
+
+| scores | 2016–18 | 2019+ |
+|---|---|---|
+| v2 CamemBERT, yearly (§8i.2) | 0.532 (n=220) | 0.875 (n=805) |
+| **v3 CamemBERT, yearly** | **0.872 (n=392)** | **0.891 (n=814)** |
+
+Agreement with the v2 yearly labels: 0.59–0.72 in 2016–18 (v2 was broken there),
+0.81–0.87 from 2019 (seed-level).
+
+**Consequence.** Sentiment is usable from **2016**, not 2019, which adds about 750
+sessions to every test. H1 and H2 (§8h.7, §8i.6) were run on v2 scores and have not
+been rerun.
+
+**Limits, to be stated in any write-up.** (1) Haiku is a single LLM annotator, and an
+LLM knows what happened after 2014. Dates and sources were hidden, but hindsight
+cannot be ruled out; robustness: rerun any result with the Haiku years' labels excluded.
+(2) Claude wrote `PROMPT_V2`, so Claude-family labels are not independent of the rubric.
+(3) Subagent labelling is not regenerable bit-for-bit; the raw files are the record.
+(4) Label rates varied across the 17 subagents (positive 12%–46% per chunk); chunks mix
+years, so this adds noise rather than year-specific bias.

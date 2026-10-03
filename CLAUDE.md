@@ -20,6 +20,15 @@ Then, depending on the task:
 | Touching statistics or a claim | `PRD.md` §3, `AGENTS.md` "Statistical conduct" |
 | Anything that will be written up | `audit/AUDIT_REPORT.md` §8e, §8h and §8i |
 
+## Update — 2026-10-03
+
+H3 (direction + crash) is in progress; plan and decisions in `STATUS.md`. **Gold v3**
+(`sentiment_gold_v3.csv`, +1,800 Claude-Haiku labels for 2014–18, `gold_haiku.py`) lifts
+CamemBERT to human-eval QWK **0.680** and makes sentiment usable from **2016**:
+`04_scored_v3_camembert.parquet` (with class probabilities). AUDIT_REPORT §8j. Heavy jobs
+run on Colab (`colab/h3_camembert_v3.ipynb`, resumable per-year cache), not this PC.
+The 2019-only statements below describe the v2 scores.
+
 ## State — 2026-09-30
 
 Corpus and instrument are done. **H1 has a verdict and it is REJECTED**: every
