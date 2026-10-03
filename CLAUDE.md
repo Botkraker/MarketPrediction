@@ -9,6 +9,7 @@ General working rules live in [AGENTS.md](AGENTS.md) and are not repeated here.
 
 Read [architecture-essentials.md](architecture-essentials.md). Nine rules, ~90 lines.
 Every one of them is a way to produce a number that looks fine and is wrong.
+Always interview me to get better information and context about the project
 
 Then, depending on the task:
 
