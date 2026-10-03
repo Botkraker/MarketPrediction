@@ -61,6 +61,19 @@ def load_prices(path: Path = DEFAULT_PRICES) -> pd.DataFrame:
                "ret", "log_ret", "abs_ret", "range_pct"]]
 
 
+def phantom_sessions(path: Path = DEFAULT_PRICES) -> pd.DatetimeIndex:
+    """Sessions whose close, high AND low copy the previous row (AUDIT_REPORT §8i.7).
+
+    19 rows, 12 of them zero-volume holidays: no trading happened, so ret = 0 there
+    and ret_next = 0 on the row before is a fake target. A genuinely flat session
+    still has its own high and low, so requiring all three keeps those.
+    """
+    px = pd.read_csv(path, encoding="utf-8-sig").sort_values("date")
+    copied = ((px["close"] == px["close"].shift()) & (px["high"] == px["high"].shift())
+              & (px["low"] == px["low"].shift()))
+    return pd.DatetimeIndex(pd.to_datetime(px.loc[copied, "date"])).normalize()
+
+
 def map_to_next_session(days: pd.Series, sessions: pd.DatetimeIndex) -> pd.Series:
     """Each publication day -> the first trading session STRICTLY after it.
 
