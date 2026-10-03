@@ -157,6 +157,10 @@ def main() -> None:
     parser.add_argument("--score-corpus", action="store_true",
                         help="score every relevant headline with the saved model (LEAKS: static fit)")
     parser.add_argument("--model-dir", type=Path, default=CURATED.parent / "models" / "camembert_3class")
+    parser.add_argument("--gold", type=Path, default=CURATED / "sentiment_gold_v2_full.csv")
+    parser.add_argument("--split", type=Path, default=CURATED / "sentiment_gold_v2_full_split.csv")
+    parser.add_argument("--out", type=Path,
+                        default=CURATED / "finetune" / "camembert_3class_evaluation_repro.json")
     args = parser.parse_args()
     if args.score_corpus:
         import pandas as pd
@@ -183,7 +187,7 @@ def main() -> None:
         print(f"scored {len(scored):,} headlines -> {out}")
         print(scored.sent_label.value_counts().to_string())
         return
-    frame = load(CURATED / "sentiment_gold_v2_full.csv", CURATED / "sentiment_gold_v2_full_split.csv")
+    frame = load(args.gold, args.split)
     if args.save:
         fit_rows = frame[frame.split.isin(["train", "validation"])]
         assert not fit_rows.gold_item_id.isin(frame[frame.split == "evaluation"].gold_item_id).any()
@@ -216,7 +220,8 @@ def main() -> None:
                                       "per_seed_qwk": per_seed},
               "original_committed": {"qwk_ordinal": 0.6349, "accuracy": 0.66,
                                      "source": "finetune/camembert_3class_evaluation.json"}}
-    out = CURATED / "finetune" / "camembert_3class_evaluation_repro.json"
+    result["gold"] = args.gold.name
+    out = args.out
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result["camembert_finetuned"], indent=2), f"\n-> {out}")
 

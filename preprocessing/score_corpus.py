@@ -91,7 +91,13 @@ def _fit(train: pd.DataFrame, model: str = "tfidf"):
 def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
         split_path: Path = DEFAULT_SPLIT, output_path: Path = DEFAULT_OUTPUT,
         metadata_path: Path = DEFAULT_METADATA, mode: str = "expanding",
-        min_train: int = 200, freq: str = "YS", model: str = "tfidf") -> pd.DataFrame:
+        min_train: int = 200, freq: str = "YS", model: str = "tfidf",
+        cache_dir: Path | None = None, years: set[int] | None = None) -> pd.DataFrame | None:
+    """`cache_dir` makes the expanding run resumable and splittable: each block's
+    scores are written to cache_dir/<start>.parquet as soon as they exist, and a
+    block already there is loaded instead of refitted. `years` restricts the run to
+    those blocks and writes only the cache (returns None), so separate machines can
+    take separate years; a final run without `years` assembles the output."""
     if mode not in ("expanding", "static"):
         raise ValueError("mode must be 'expanding' or 'static'")
     gold = pd.read_csv(gold_path, keep_default_na=False)
@@ -121,20 +127,44 @@ def run(corpus_path: Path = DEFAULT_CORPUS, gold_path: Path = DEFAULT_GOLD,
             # strictly before `start`: nothing at or after it may inform the fit
             past = train_pool[train_pool.day < start]
             block = (corpus.day >= start) & (corpus.day < end)
-            if not block.any():
+            if not block.any() or (years and start.year not in years):
                 continue
             if len(past) < min_train or past.adjudicated_label.nunique() < 2:
                 unscored += int(block.sum())      # left blank, never imputed
                 continue
-            fitted = _fit(past, model)
-            print(f"  {start.date()}: fit on {len(past):,} gold rows, scoring {int(block.sum()):,}", flush=True)
-            corpus.loc[block, "sent_label"] = fitted.predict(
-                corpus.loc[block, "headline_clean"].astype(str))
+            cached = cache_dir / f"{start.date()}.parquet" if cache_dir else None
+            if cached and cached.exists():
+                part = pd.read_parquet(cached)
+                assert part.row_id.tolist() == corpus.loc[block, "row_id"].tolist(), \
+                    f"{cached} was scored on a different corpus"
+            else:
+                fitted = _fit(past, model)
+                print(f"  {start.date()}: fit on {len(past):,} gold rows, scoring {int(block.sum()):,}", flush=True)
+                part = corpus.loc[block, ["row_id"]].copy()
+                texts = corpus.loc[block, "headline_clean"].astype(str)
+                if model == "camembert":    # keep the probabilities, not only the argmax
+                    from camembert_clf import CLASSES
+                    proba = fitted.predict_proba(texts)
+                    part["sent_label"] = [CLASSES[i] for i in proba.argmax(1)]
+                    for i, name in enumerate(CLASSES):
+                        part[f"p_{name}"] = proba[:, i].round(4)
+                else:
+                    part["sent_label"] = fitted.predict(texts)
+                part["train_n"] = len(past)
+                if cached:
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    part.to_parquet(cached.with_suffix(".tmp"), index=False)
+                    cached.with_suffix(".tmp").replace(cached)   # atomic: a kick-out never leaves half a file
+            for col in part.columns.drop(["row_id", "train_n"]):
+                corpus.loc[block, col] = part[col].to_numpy()
             corpus.loc[block, "sent_model_train_end"] = start.date().isoformat()
+        if years:
+            return None
     corpus["sent_score"] = corpus.sent_label.map(LABEL_SCORE)
 
     keep = ["row_id", "source", "lang", "published_date", "headline_clean",
             "relevance_tag", "sent_label", "sent_score", "sent_model_train_end"]
+    keep += [c for c in corpus.columns if c.startswith("p_")]
     scored = corpus[keep].reset_index(drop=True)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     scored.to_parquet(output_path, index=False)
@@ -180,10 +210,18 @@ def main() -> None:
     parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
     parser.add_argument("--split", type=Path, default=DEFAULT_SPLIT)
     parser.add_argument("--metadata", type=Path, default=DEFAULT_METADATA)
+    parser.add_argument("--cache-dir", type=Path, help="per-year cache: resumable, splittable")
+    parser.add_argument("--years", type=lambda s: {int(y) for y in s.split(",")},
+                        help="score only these years into --cache-dir, e.g. 2016,2017")
     args = parser.parse_args()
+    if args.years and not args.cache_dir:
+        parser.error("--years needs --cache-dir")
     scored = run(gold_path=args.gold, split_path=args.split, output_path=args.output,
                  metadata_path=args.metadata, mode=args.mode, min_train=args.min_train,
-                 model=args.model)
+                 model=args.model, cache_dir=args.cache_dir, years=args.years)
+    if scored is None:
+        print(f"cached years {sorted(args.years)} -> {args.cache_dir}")
+        return
     blank = int((scored.sent_label == "").sum())
     print(f"mode={args.mode}  scored {len(scored)-blank:,} of {len(scored):,} headlines"
           f"  ({blank:,} left unscored: insufficient prior labels)")
