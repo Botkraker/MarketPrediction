@@ -40,7 +40,7 @@ from scipy import stats
 import bench
 import h3
 from config import PRICE_REPORT_PATTERN
-from features import DEFAULT_PRICES
+from features import DEFAULT_PRICES, phantom_sessions
 
 GAP, JUMP, BLOCK = 5, 0.10, 20           # sessions both ways (owner); ex-date screen; card
 DIMSON_WINDOW, DIMSON_MIN_TRADES = 250, 60
@@ -101,10 +101,13 @@ def dimson_betas(close: pd.Series, idx_ret: pd.Series, cal: pd.DatetimeIndex, ye
     return out
 
 
-def panel(confirm: bool = False, news: pd.DataFrame | None = None) -> pd.DataFrame:
-    """One row per firm trade day, 2016 to FIRM_END. The design run reads no price from
+def panel(confirm: bool = False, news: pd.DataFrame | None = None, start: str = h3.START,
+          drop_phantoms: bool = False) -> pd.DataFrame:
+    """One row per firm trade day, `start` to FIRM_END. The design run reads no price from
     FIRM_SEAL on: those trade dates stay (counted, never priced) with blank prices. The
-    confirmation run reads them after bench.seal has checked the tag."""
+    confirmation run reads them after bench.seal has checked the tag. drop_phantoms takes
+    the phantom sessions out of the firm and index prices (data rule 2): P2 as
+    pre-registered kept them (AUDIT_REPORT §P2); P3 drops them."""
     if confirm:
         bench.seal(pd.DataFrame({"session": pd.to_datetime([])}), "p2", confirm=True)
     last = pd.Timestamp(bench.FIRM_END) if confirm else pd.Timestamp(bench.FIRM_SEAL) - pd.Timedelta(days=1)
@@ -115,10 +118,12 @@ def panel(confirm: bool = False, news: pd.DataFrame | None = None) -> pd.DataFra
     a = a.drop_duplicates(["Ticker", "session"], keep="last").sort_values(["Ticker", "session"])
     px = pd.read_csv(DEFAULT_PRICES, encoding="utf-8-sig", usecols=["date", "close"])
     idx = pd.Series(px.close.to_numpy(float), index=pd.to_datetime(px.date).dt.normalize())
+    if drop_phantoms:
+        a, idx = a[~a.session.isin(phantom_sessions())], idx[~idx.index.isin(phantom_sessions())]
     idx = idx[idx.index <= last]
     v = idx.reindex(cal)
     idx_ret = v / v.shift() - 1
-    years = range(pd.Timestamp(h3.START).year, last.year + 1)
+    years = range(pd.Timestamp(start).year, last.year + 1)
     parts = []
     for ticker in h3.issuer_patterns():
         g = a[a.Ticker == ticker]
@@ -146,7 +151,7 @@ def panel(confirm: bool = False, news: pd.DataFrame | None = None) -> pd.DataFra
         f["har5"], f["har22"] = f.abs_r.rolling(5).mean(), f.abs_r.rolling(22).mean()
         parts.append(f)
     p = pd.concat(parts, ignore_index=True)
-    return p[(p.session >= h3.START) & (p.session <= bench.FIRM_END)].reset_index(drop=True)
+    return p[(p.session >= start) & (p.session <= bench.FIRM_END)].reset_index(drop=True)
 
 
 def rows(p: pd.DataFrame, test: str, confirm: bool, target: str | None = None,
