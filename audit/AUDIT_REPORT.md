@@ -1864,3 +1864,111 @@ each check swaps one input or one model piece of it. None of them can change G2.
 - mask or exclude the corporate-action vocabulary;
 - drop phantom sessions;
 - plan around an effect about the size worth having, not comfortably above it.
+
+## P3. A market-labelled word list for firm events (ADR-001, 2026-10-06)
+
+- **Pre-registration.** `audit/PREREG_P3.md`, frozen at the annotated tag `prereg-p3-v1`
+  (commit `8c5e854`) before the design run. The sealed run checked the tag, and checked
+  that `preprocessing/` was identical to it.
+- **Code.** `preprocessing/p3.py`.
+  - `p2.panel` gained `start` and `drop_phantoms`. Its default output is unchanged
+    (`assert_frame_equal` against a snapshot).
+  - Tests: `test_p3.py` (`python3 -m pytest preprocessing`: 146 passed).
+- **Outputs.**
+  - `p3_controls_run1.json` and `p3_controls_run2.json` (failed), `p3_controls.json`;
+  - `p3_power.json`;
+  - `p3_design.json`, committed in `351bc03` before the sealed run;
+  - `p3_confirm.json`, the one sealed run.
+- **Units.** Firm events are P2's volatility units with issuer news, with phantom sessions
+  dropped. Test events: 2,302 in design (2017–2020) and 837 sealed (2021–2022).
+- **Label and words, from the card.**
+  - The label is the next trade's |AR| minus the in-fold firm model's forecast; the top
+    and bottom terciles train the words.
+  - Words: issuer names masked, corporate-action words removed, single words and pairs.
+    A word must appear in 30 or more events across 6 or more quarters, and pass
+    Benjamini–Hochberg at 10%.
+  - Words are learned from 2014 and refit every 1 January.
+- **Test.** Clark-West of F0 + v3 + words against F0 + v3. SESOI: 2.5% of the F0 + v3 MSE
+  (owner).
+
+**Controls** (design window, before the tag).
+- **Run 1 failed.** The decisive test was then the head-to-head. Stale news gave 16 false
+  finds, all "words better": with an empty list the word model skipped the coefficient v3
+  must estimate (ADR T2). The owner made Clark-West decisive.
+- **Run 2 failed.** Empty lists made the two forecasts differ only by rounding. Fix: a
+  score that is 0 in every training row is left out of the model.
+- **Run 3:** both negative controls pass (shuffled 4, stale 2). The planted word was found
+  in 70 of 100 runs, against a band of 72–88: the yearly screen sometimes drops it. The
+  owner accepted this as a power loss.
+- **Power curve:** at 80% power the MDE is at most 1.29% of the MSE in design, and about
+  2.14% projected for the sealed window.
+
+### Primary: words added to F0 + v3 (decides G3)
+
+| run | events | gain [95% CI] | share of MSE | z (p) | MDE | SESOI | verdict |
+|---|---|---|---|---|---|---|---|
+| design 2017–2020 | 2,302 | +1.6e-08 [−6.8e-08, +1.0e-07] | +0.009% | +0.38 (0.71) | 1.2e-07 | 4.5e-06 | NO GAIN WORTH HAVING |
+| **sealed** 2021–2022 | 837 | +2.1e-09 [−3.1e-08, +3.5e-08] | +0.001% | +0.12 (0.90) | 4.7e-08 | 5.2e-06 | **NO GAIN WORTH HAVING** |
+
+**G3 not passed: Exit (ADR G3).**
+- Both intervals lie far inside ±SESOI.
+- The words are unstable: median recurrence 0.40 in design. In the sealed run it is 0,
+  because the last refit selected no word.
+- Each run's own MDE (2.8 SE) is tiny, because the list was empty in most years and the two
+  forecasts barely differ. The relevant power statement is the power curve
+  (PREREG_P3 §10).
+
+### The words
+
+| refits | words selected |
+|---|---|
+| 2016–2018 | none |
+| 2019 and 2020 | the same five, all on the "big next move" side: *résultat*, *résultat net*, *net* (earnings headlines), *bloc pour*, *pour #* (block-trade notices) |
+| 2021 and 2022 | none |
+
+Eligible words grew from 96 to 373, so the screen had words to test; almost none were
+selected.
+
+### Every other family
+
+| | design | sealed |
+|---|---|---|
+| head-to-head, MSE(words) − MSE(v3) | −5.3e-07 [−1.5e-06, +4.7e-07], z −1.05 | +4.0e-08 [−3.1e-07, +3.9e-07], z +0.22 |
+| words vs F0 (Clark-West) | z +0.11 | z +0.12 |
+| v3 vs F0 (Clark-West) | z +0.02 | z +0.44 |
+| corporate-action words kept | identical to the primary (none were selected) | identical to the primary |
+| issuer names kept | +0.015% of MSE, z +0.48 | −0.080% of MSE, z −1.88 (p 0.060) |
+| L2 logistic on screened words | +0.021%, z +0.28 | +0.000%, z +0.15 |
+| DMR (all eligible words) | +0.126%, z +0.90 | **+0.424% [+0.08%, +0.76%], z +2.43 (p 0.015)** |
+| leave one year out | the gain comes from 2020 only (earlier lists were empty) | 2021 alone −1.7e-08; 2022 alone +2.3e-08 |
+| contemporaneous check (Spearman, score vs same-session \|r\|) | +0.044 | not defined: the score is 0 for every sealed event |
+| price-report placebo | 53 issuer price-report headlines: not estimable | — |
+
+- **DMR.** It scores with every eligible word instead of the screened ones. In the sealed
+  window its interval excludes 0: one of four robustness arms, unadjusted p 0.015.
+- But its whole interval (0.08% to 0.76% of the MSE) lies inside the 2.5% SESOI. Under the
+  primary rule it reads "no gain worth having".
+- It is a hint of a very small content signal, not a channel.
+
+### Deviations from the pre-registration
+
+- The planted control missed the G0 band (70 against a floor of 72); the owner accepted it
+  before the tag (PREREG_P3 §12).
+- None other.
+
+### Conclusion
+
+**No word list worth having.** Letting price reactions pick the words gives no usable list
+for Tunisian firm news at daily resolution.
+- Until 2018 no word passed the card's screen.
+- In 2019–2020 five words did (earnings results, block-trade notices), and then they
+  vanished.
+- Adding the list to the firm's own volatility and v3's negative share changed the
+  forecast error by 0.009% in design and 0.001% sealed, against the 2.5% worth having.
+
+**What survives** is P2's channel. Days with issuer news are followed by bigger moves. That
+is news *presence*, not content that a word list or v3 can read.
+
+**Next.** G3 failed, so ADR §3 says Exit: stop the content route, so P4–P6 do not run.
+Write up the nulls with their MDEs, then W (the price-only early-warning write-up) or D1
+(intraday timestamps, which needs approval).

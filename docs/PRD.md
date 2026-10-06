@@ -134,7 +134,11 @@ slightly further, below the smallest effect worth having; the sealed drift exclu
 with the ±10% move screen. G2 passed on the volatility channel (AUDIT_REPORT §P2). Post-hoc
 checks on 2016–2020 (range and date controls, phantom sessions, corporate-action headlines)
 leave it in place but shrink it by 16%, to about the smallest effect worth having. G2 review
-(owner): P3's firm events target that channel; no new data. Next: P3, after its interview.
+(owner): P3's firm events target that channel; no new data. **P3 done**: a word list picked
+by price reactions adds no forecast gain worth having beyond v3 and the firm's own
+volatility, in design or sealed, and its words are unstable. G3 not passed, so the content
+route stops (Exit, AUDIT_REPORT §P3). Next: the owner chooses W (price-only early-warning
+write-up) or D1 (intraday timestamps).
 
 The 2026-09-30 status follows, unchanged except where marked.
 
