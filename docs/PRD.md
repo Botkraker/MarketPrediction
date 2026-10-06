@@ -131,8 +131,9 @@ the next session's swing worth having, in the design window or the sealed 2024+ 
 trade moves more than its recent swings predict (sealed 2021–22: +18% of the mean move; the
 interval's lower end, 10.5%, just clears the 10% worth having). Moves with news drift
 slightly further, below the smallest effect worth having; the sealed drift excludes 0 only
-with the ±10% move screen. G2 passed on the volatility channel (AUDIT_REPORT §P2, with the
-review's open checks: range, corporate-action headlines, phantom sessions). G2 review
+with the ±10% move screen. G2 passed on the volatility channel (AUDIT_REPORT §P2). Post-hoc
+checks on 2016–2020 (range and date controls, phantom sessions, corporate-action headlines)
+leave it in place but shrink it by 16%, to about the smallest effect worth having. G2 review
 (owner): P3's firm events target that channel; no new data. Next: P3, after its interview.
 
 The 2026-09-30 status follows, unchanged except where marked.

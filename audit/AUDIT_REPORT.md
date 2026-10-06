@@ -1680,7 +1680,8 @@ vs no news), after its interview.
     every one with volume > 0) and 24 rows in 2021–22.
   - On those dates the index level is mostly copied (r_m = 0 in 210 of the 237).
   - 235 design c1 units have a next trade on a phantom session.
-  - Impact on the results: not computed.
+  - Impact (post hoc, design window): the volatility effect moves by −2.2%, and no verdict
+    changes (see Post-hoc checks).
 
 ### Primary: headlines without price reports (decides G2)
 
@@ -1778,12 +1779,14 @@ Over five trades there is nothing.
 - **Corporate actions.** Prices are not adjusted for them. A dividend, detachment or
   bonus-share headline dated on or before a trade, followed by an ex-date at the next
   trade, gives a large |AR_1| with no reaction to news. Ex-dates below 10% pass the screen.
-  - How much of g this explains: not computed.
+  - Post hoc (design window): removing those headlines shrinks the volatility effect by
+    11.5%. It stays a CHANNEL (see Post-hoc checks).
   - The news main effect on AR_1 is positive in both windows (d +0.00100 design, +0.00153
     sealed), which ex-date drops alone would not produce.
   - Without a check, P3's word list could learn corporate-action words ("dividende",
     "détachement", "AGO") as volatility words.
-- **T8.** The same-session range is not conditioned on; only |r_t| enters, linearly.
+- **T8.** The same-session range is not conditioned on; only |r_t| enters, linearly. Post
+  hoc, adding the range, |r|² and date effects moves the volatility effect by −3.4%.
 - **Phantom sessions** are kept (see Units and drops).
 - The confirmation window covers two years.
 
@@ -1813,17 +1816,51 @@ JSONs:
   - the departures table;
   - the drop reconciliation;
   - the PREREG number sources.
-- **Tests added** (now 140 passed):
+- **Tests added** (now 141 passed, counting the post-hoc check's own test):
   - the confirm guard now runs with the tag present;
   - the ±10% screen windows;
   - Dimson β is past-only;
   - the verdict order.
-- **Open, for the owner** (post-hoc checks on 2016–2020 only; they cannot re-decide G2):
-  - the T8 range;
-  - corporate-action headlines;
-  - phantom sessions.
+- **Post-hoc checks**, approved by the owner and run on 2016–2020 only (below): the T8
+  range, corporate-action headlines and phantom sessions.
 - **For P3:**
   - `--confirm` should also check that the code matches the tagged code;
   - use an annotated tag (`prereg-p2-v1` is lightweight, `prereg-p1-v1` annotated);
   - nulls should keep the flags' structure;
   - the volatility baseline should include the news flag.
+
+### Post-hoc checks (owner, 2026-10-06; design window 2016–2020 only)
+
+`preprocessing/p2_posthoc.py` writes `data/curated/p2_posthoc.json`. `p2.py` is unchanged;
+each check swaps one input or one model piece of it. None of them can change G2.
+- **Firm High/Low check** (77,135 design firm days): 0 non-positive lows, 0 highs below the
+  low, 1 close outside its range, 17,884 zero-range days. The range is usable.
+- **Phantom sessions:** 237 design rows dropped from ALL_DATA, along with the copied index
+  rows.
+- **Corporate actions:** 254 issuer-headline rows removed. They matched dividende,
+  détachement, coupon, mise en paiement, AGO/AGE, assemblée générale, attribution gratuite,
+  actions gratuites or augmentation de capital. The volatility units lose 198 news days
+  (2,933 → 2,735).
+
+| check | volatility effect (share of mean \|AR_1\|) [95% CI] | change | c, 1 trade | c, 5 trades |
+|---|---|---|---|---|
+| design, as pre-registered | +0.00158 (12.1%) [+0.00101, +0.00214] | — | +0.095 | −0.003 |
+| phantom sessions dropped | +0.00154 (11.8%) [+0.00097, +0.00211] | −2.2% | +0.089 | −0.017 |
+| corporate-action headlines removed | +0.00140 (10.7%) [+0.00085, +0.00194] | −11.5% | +0.089 | −0.022 |
+| T8: + range and \|r\|² | +0.00154 (11.8%) [+0.00097, +0.00210] | −2.6% | unchanged | unchanged |
+| T8 + date effects | +0.00152 (11.7%) [+0.00096, +0.00208] | −3.4% | unchanged | unchanged |
+| all three together | +0.00132 (10.2%) [+0.00077, +0.00187] | −16.1% | +0.082 | −0.036 |
+
+**No verdict changes.**
+- Volatility is a CHANNEL in every check (Holm p < 0.0001).
+- c at 1 trade and at 5 trades stay "no effect worth having".
+
+**Reading.** The volatility channel is not produced by these three mechanisms. But:
+- corporate-action headlines carry about 11% of it;
+- with all three fixes, the design-window effect sits at the SESOI: 10.2% against 10%,
+  with the lower end at 5.9%.
+
+**For P3:**
+- mask or exclude the corporate-action vocabulary;
+- drop phantom sessions;
+- plan around an effect about the size worth having, not comfortably above it.
