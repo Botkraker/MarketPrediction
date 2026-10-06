@@ -1,6 +1,6 @@
 # PRD — Tunindex News-Sentiment Pipeline
 
-**Status:** active research, pre-publication · **Owner:** Yassine Ben Sassi · **Last revised:** 2026-09-30
+**Status:** active research, pre-publication · **Owner:** Yassine Ben Sassi · **Last revised:** 2026-10-05
 
 ---
 
@@ -25,6 +25,7 @@ news-driven, and the entire relevant press is ~46k headlines rather than million
 |---|---|---|
 | **H1** | Sentiment features add predictive power over lagged price and volume, under walk-forward validation. | Paired comparison against the price-only baseline, four arms, Holm-corrected. |
 | **H2** | The Türkiye source ranking (international > domestic) does not transfer to Tunisia. | Per-source ablation on the final model, restricted to the common coverage window. |
+| **H3** | News tone improves the out-of-sample forecast of next-session direction (drop / flat / rise), the same at 5 and 20 sessions, and of large firm drawdowns. | Pre-registered (`audit/PREREG_H3.md`, tag `prereg-h3-v1`): log-loss and PR-AUC, block bootstrap, Holm. **INCONCLUSIVE** (AUDIT_REPORT §H3). |
 
 H2 has a **first per-outlet run** (2026-09-30, AUDIT_REPORT §8i.6) but not an answer.
 Over 2019+ no outlet's sentiment adds to the price-only model out of sample, and
@@ -33,6 +34,15 @@ side cannot be tested yet: the corpus has no Arabic, the NYT, Guardian and Econo
 total ~1,000 rows against ~45,000 French, and CamemBERT scores almost every English
 headline `neutral`. An international-vs-domestic ranking needs an English-capable
 instrument first (FinBERT on the originals, or on `headlines_en.parquet`).
+
+**Next: ADR-001** (`ADR-001_text-to-market_waterfall.pdf`; owner decisions 2026-10-05).
+Three sentiment tests gave three nulls, so the plan changes the target before it changes
+the model. P0 builds one test bench and proves it finds a planted signal and ignores fake
+ones. P1 asks whether news flow predicts the *size* of the next index move; P2 whether
+firm moves with news continue while moves without news reverse. P3 lets price reactions
+pick the words (a market-labelled lexicon, firm events first). P4–P6 (sentence
+embeddings, fine-tuning, an LLM) run only if P3 earns them. If P1 and P2 are both null,
+the content route stops.
 
 ## 3. Success criteria
 
@@ -59,9 +69,23 @@ A result is reportable only when **all** of these hold.
   direction.
 - Scoring is leakage-free (`--mode expanding`). Headlines with no prior gold labels
   stay **unscored**, never imputed.
-- Sentiment enters a result only from **2019**, the first year whose yearly model saw
-  more than 700 gold rows. Saved-model scores (`sent_source = saved_model`) are
-  descriptive fill and never enter a result.
+- Sentiment enters a result only from leakage-free yearly scores: v3 from **2016**
+  (AUDIT_REPORT §8j), v2 from 2019 (§8i.2). Saved-model scores
+  (`sent_source = saved_model`) are descriptive fill and never enter a result.
+
+**From ADR-001 on (every new test)**
+- Design on 2016–2023. Pre-register and tag (`prereg-<phase>-v1`) before the first
+  confirmatory fit, then run one sealed confirmation on sessions from 2024-01-01.
+  Firm-level tests follow their phase card, since firm prices end 2022-12-30 (P2: design
+  2016–2020, confirm 2021–2022).
+- The baseline always includes price lags. Text labels are residuals after the in-fold
+  price-only model. At most 2 text-derived features per forecasting model.
+- Nested comparisons are read against a matched-noise null, with Clark-West for MSE
+  targets. AUC alone never decides.
+- A pipeline is trusted only after a positive control (planted signal recovered) and
+  negative controls (permuted labels, stale news) pass.
+- Every arm, horizon and null is reported with its MDE. A null is inconclusive unless its
+  CI excludes a pre-registered smallest effect of interest.
 
 **Honesty**
 - The design is underpowered on the sign test: MDE at 80% power is **3.2pp** against
@@ -77,6 +101,8 @@ A result is reportable only when **all** of these hold.
 - Daily Tunindex OHLCV, 2010-01-04 → 2026-09-16, 4,167 sessions.
 - Next-session directional and continuous prediction.
 - A fine-tuned encoder as the sentiment instrument.
+- Next-session index volatility (P1) and firm-level returns after moves with and without
+  news (P2), per ADR-001.
 
 **Explicitly out of scope**
 - Intraday prediction. Headlines are date-only for 65% of the corpus.
@@ -86,8 +112,24 @@ A result is reportable only when **all** of these hold.
 - Volume features. News volume vs trading volume is r=+0.018, ns, flat across all
   8 sources individually.
 - Arabic, until a genuine Tunisian Arabic outlet is scraped.
+- New data (ADR-001 D1–D3: intraday timestamps, firm prices 2023–2026, an Arabic
+  source) until the owner approves it. None is approved as of 2026-10-05.
 
-## 5. Current status — 2026-09-30
+## 5. Current status — 2026-10-05
+
+**2026-10-05.** H3 ran as pre-registered. News adds nothing measurable to the direction
+forecast at 1, 5 or 20 sessions, or to the firm-drawdown warning: **INCONCLUSIVE**
+(AUDIT_REPORT §H3). The price-only drawdown model carries information on its own
+(PR-AUC 2.2× the event rate, §H3). Gold v3 adds 1,800 Haiku labels for 2014–18; the v3
+instrument reaches human-eval QWK 0.680 and is usable from 2016 (§8j). ADR-001 is the plan
+from here. The owner chose the recommended option on all four questions: design
+2016–2023 with a sealed 2024+ confirmation, order P0 → P1 → P2 → P3, firm events first, no
+new data yet. **P0 done**: the test bench passes its controls and the owner approved its
+MDE table (G0, 2026-10-06, AUDIT_REPORT §P0). **P1 done**: news flow adds no forecast of
+the next session's swing worth having, in the design window or the sealed 2024+ run
+(G1 not passed, AUDIT_REPORT §P1). Next: P2, after its interview.
+
+The 2026-09-30 status follows, unchanged except where marked.
 
 **Done**
 - Corpus: 46,013 canonical relevant headlines, 8 sources, audited end to end.
@@ -130,8 +172,8 @@ sentiment instrument is degenerate. The verdict stands until H1 is rerun on 2019
   (2026-09-30). *Still orphaned:* v2 gold-set construction, XLM-R, the FinBERT head,
   the macro controls, `sent_resid_*_lag1`, and the build of the committed
   `daily_features.parquet`.
-- **H1 on 2019+:** rescore with `--min-train` ≈ 700, rebuild features, rerun the four
-  arms, declared as a post-hoc restriction.
+- **H1 on 2019+:** *superseded 2026-10-05.* ADR-001 P0 reruns H1 on the v3 scores
+  (2016+), with the orthogonal arm fitted in-fold on controls not in the model.
 - **Seven EDA defects** unfixed, including look-ahead in the orthogonal arm
   (`features.py:127–135`) and phantom holiday sessions (AUDIT_REPORT §8i.7).
 - An English-capable instrument for the international outlets (H2).
@@ -145,9 +187,10 @@ sentiment instrument is degenerate. The verdict stands until H1 is rerun on 2019
 |---|---|---|
 | M1 | Reproducibility restored | Every file in `data/curated/` is regenerable from a committed script. *In progress: 5 of 8 orphan columns closed; CamemBERT and translation closed.* |
 | M2 | Instrument graded | CamemBERT scored on the human evaluation split, with CIs, and the label ceiling stated. *Point estimate done (QWK 0.618 reproduced); CIs and ceiling outstanding; pre-2019 collapse documented.* |
-| M3 | H1 final | Four arms, both tests, Holm, sensitivity grid, block-bootstrap CIs, **on 2019+**, EDA defects fixed. |
+| M3 | H1 final | *Superseded 2026-10-05 by ADR-001 P0:* H1 rerun on v3 (2016+), orthogonal arm fitted in-fold, read against the matched-noise null. |
 | M4 | H2 or formal withdrawal | *First per-outlet run done (§8i.6, French outlets only).* Next: an English-capable instrument, then either a fr-vs-en / international-vs-domestic ranking with the imbalance declared, or formal withdrawal. |
 | M5 | Paper-ready | Every claim traces to a regenerable audit section. |
+| M6 | ADR-001 waterfall | Each of P0–P3: prereg and tag, design run, freeze, one sealed confirmation run, an AUDIT_REPORT section with every arm and each null's MDE, owner approval at its gate. |
 
 ## 7. Risks
 
@@ -158,6 +201,7 @@ sentiment instrument is degenerate. The verdict stands until H1 is rerun on 2019
 | Price-report headlines launder momentum | H1 "works" for the wrong reason | Four arms; placebo and orthogonal arms are mandatory |
 | Unreproducible artifacts | Result cannot be defended | M1 blocks everything downstream |
 | Corpus is 97% French | H2 unanswerable | Declared as a limitation, not a finding |
-| Instrument collapses before 2019 | Pre-2019 sentiment is noise | Result window starts 2019; saved-model fill tagged and excluded |
+| Instrument collapses before 2019 (v2) | Pre-2019 sentiment is noise | Fixed from 2016 by gold v3 (§8j); saved-model fill tagged and excluded |
+| New phases find false channels | Noise or leakage reported as signal | ADR-001 §4 (traps T1–T8) and §9 (loophole register) |
 | CamemBERT blind on English | International outlets have no sentiment | Score them with an English-capable model before any H2 ranking |
 | Phantom sessions / missing volume | Fake targets and baseline features | Recorded in §8i.7; fix before M3 |

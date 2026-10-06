@@ -216,7 +216,7 @@ distinguishable from "neutral headlines".
 **Walk-forward, never cross-validation.** `min_train=500`, `refit_every=20`,
 `EMBARGO_SESSIONS=5`, 2,678 predictions from 2014.
 
-**Regress the return and take the sign.** Do not classify direction — logistic on a
+**For H1's binary target, regress the return and take the sign.** Do not classify up/down — logistic on a
 drift-dominated binary label collapses to "always up" and predicts up 77–92% of the
 time. Regression scores ~0.556 against ~0.545 on every feature set.
 
@@ -251,6 +251,17 @@ all-outlets model scores 0.597 against 0.598; kapitalis degrades the forecast (H
 p = 0.036, 0.10 without price reports). English outlets are untestable (§4).
 **INCONCLUSIVE.** Full table in AUDIT_REPORT §8i.6.
 
+**H3** — `h3.py`, pre-registered in `audit/PREREG_H3.md` (tag `prereg-h3-v1`). 3-class
+direction at 1, 5 and 20 sessions with multinomial logistic, a logged exception to the
+rule above (PREREG_H3 §7), plus a firm-drawdown panel. Phantom sessions are dropped via
+`features.phantom_sessions()`. News adds nothing measurable: **INCONCLUSIVE**
+(AUDIT_REPORT §H3).
+
+**ADR-001 P0** (`bench.py`, AUDIT_REPORT §P0; G0 passed 2026-10-06) generalises `h3.walk_forward_proba` and `h3.compare` into the one
+harness every later phase uses (regression and classification, in-fold transforms,
+embargo max(5, h), circular block bootstrap, Clark-West for MSE targets), with
+planted-signal and fake-signal controls and a seal on sessions from 2024-01-01.
+
 ## 7. Known structural defects
 
 Ordered by how much they block publication.
@@ -272,8 +283,9 @@ Ordered by how much they block publication.
    the build of the committed `daily_features.parquet`.
 2. **Sentiment before 2019 is not a measurement.** The yearly CamemBERT models for
    2016–18 saw 298–582 gold rows and collapse to one or two classes; ~28% of H1's
-   predictions sit in those years. Fix: rescore with `--min-train` ≈ 700 and rerun H1 on
-   2019+, declared post hoc. *(The former item 2 — no §8h — is closed.)*
+   predictions sit in those years. **Closed 2026-10-03 by gold v3** (AUDIT_REPORT §8j):
+   v3 scores are usable from 2016. H1's rerun on v3 is ADR-001 P0.
+   *(The former item 2 — no §8h — is closed.)*
 3. **H1 provenance is unrecorded.** `hypothesis_results.json` does not say which scored
    file fed it, and `features.py:46` still defaults to `04_scored.parquet` (v1, dated
    2026-09-20) while the v2 and CamemBERT scores sit beside it unused by default.
@@ -299,6 +311,9 @@ Ordered by how much they block publication.
    test period included; `sent_resid_price_only_lag1` residualises 0-filled inputs;
    Brent returns repeated on filled sessions; U+FFFC left in 3 headlines by
    `normalize.py`.
+   *Since 2026-10-03:* `features.phantom_sessions()` lists the phantom rows and `h3.py`
+   drops them (PREREG_H3 §3.1). The orthogonal-arm look-ahead is still in `features.py`;
+   ADR-001 P0 reruns H1 with that residual fitted in-fold.
 8. **Stale price-report figures in code and docs.** Commit `7ed9c0c` replaced the v1
    regex with the v2 co-occurrence pattern and left the percentages behind. The true
    share under the current pattern is **3.74%** (1,722 of 46,013), not 10%.
