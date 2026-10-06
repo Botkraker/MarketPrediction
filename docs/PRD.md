@@ -125,7 +125,9 @@ instrument reaches human-eval QWK 0.680 and is usable from 2016 (§8j). ADR-001 
 from here. The owner chose the recommended option on all four questions: design
 2016–2023 with a sealed 2024+ confirmation, order P0 → P1 → P2 → P3, firm events first, no
 new data yet. **P0 done**: the test bench passes its controls and the owner approved its
-MDE table (G0, 2026-10-06, AUDIT_REPORT §P0). Next: P1, after its interview.
+MDE table (G0, 2026-10-06, AUDIT_REPORT §P0). **P1 done**: news flow adds no forecast of
+the next session's swing worth having, in the design window or the sealed 2024+ run
+(G1 not passed, AUDIT_REPORT §P1). Next: P2, after its interview.
 
 The 2026-09-30 status follows, unchanged except where marked.
 

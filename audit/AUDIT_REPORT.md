@@ -1558,3 +1558,63 @@ The bench passes its controls and its detection limits are known. Both "news mad
 worse" results were the cost of fitting extra parameters, not harm. H1 on the better v3
 sentiment still finds nothing. Next: P1 (index volatility), only after its interview and
 pre-registration.
+
+## P1. News flow and the size of the next index move (ADR-001, 2026-10-06)
+
+- **Pre-registration.** `audit/PREREG_P1.md`, frozen at tag `prereg-p1-v1` (commit
+  `1851e87`) before the design run.
+- **Code.** `preprocessing/p1.py` on `bench.py`; tests in `test_p1.py`
+  (`python3 -m pytest preprocessing`: 132 passed).
+- **Outputs.** `p1_controls.json`; `p1_design.json` (committed in `34fff98` before the
+  sealed run); `p1_confirm.json` (the one sealed run).
+- **Target.** Next-session Parkinson variance.
+- **Baseline.** HAR on log range, the last |return|, the weekday and the days to the
+  session.
+- **News block.** log count, v3 negative share, and word-bigram novelty against the
+  previous 250 sessions.
+- **Test.** QLIKE read against 100 surrogates of the block, scaled with the
+  block-bootstrap SE (§P0).
+- **SESOI.** 3% of the baseline's mean QLIKE (owner).
+
+**Controls** (design window, before the tag): the planted signal was found in 76 of 100
+runs (median statistic 2.68); shuffled labels gave 0 false finds and stale news 1. Pass.
+
+### Primary: headlines without price reports (decides G1)
+
+| run | sessions | baseline QLIKE | effect vs surrogates [95% CI] | share of baseline | MDE | SESOI | verdict |
+|---|---|---|---|---|---|---|---|
+| design | 1,493 (2018-01-08 → 2023-12-28) | 0.2866 | −0.0007 [−0.0044, +0.0031] | −0.24% | 0.0053 | 0.0086 | NO EFFECT WORTH HAVING |
+| **sealed** | 664 (2024-01-02 → 2026-09-15) | 0.3015 | −0.0003 [−0.0040, +0.0035] | −0.08% | 0.0053 | 0.0090 | **NO EFFECT WORTH HAVING** |
+
+**G1 not passed**: the sealed run shows no improvement. Under the ADR, P3 adds no
+volatility label and P3's index arm becomes exploratory only.
+
+### Every other arm and family
+
+| | design | sealed |
+|---|---|---|
+| all headlines | −0.0013 [−0.0053, +0.0026], no effect worth having | +0.0002 [−0.0040, +0.0045], no effect worth having |
+| price reports only | −0.0005 [−0.0032, +0.0022], no effect worth having | +0.0016 [−0.0021, +0.0052], no effect worth having |
+| S1: count / negative share / novelty alone, Holm p | 1.00 / 1.00 / 1.00 | 0.61 / 0.77 / 0.61 |
+| S2: Clark-West on log variance | +0.89 (p 0.38) | −0.51 (p 0.61) |
+| S3: next squared return | no effect worth having (Holm p 0.78) | no effect worth having (Holm p 0.81) |
+| S3: next 5 squared returns | no effect worth having (Holm p 0.57) | **INCONCLUSIVE**: −0.0096 [−0.0281, +0.0090] against a SESOI of 0.0191 (Holm p 0.62) |
+
+- Zero-range sessions, not targets: 3 in the design window, 0 in the sealed one.
+- The sealed run's MDE (0.0053) is smaller than the 0.0081 projected at G0. The
+  projection scaled the design SE by the session count, and the sealed window turned out
+  less variable.
+
+### Deviations from the pre-registration
+
+None.
+
+### Conclusion
+
+How many headlines a session carries, how negative they are and how unusual they are
+add nothing to the forecast of the next session's swing once recent swings are known.
+That holds in 2016–2023 and in the sealed 2024–2026 window. Both primary intervals exclude
+the smallest gain the owner called worth having, so this is an absence measured at that
+size, not only a lack of power. The same-day link between headline counts and price
+swings (§8c) does not carry into a forecast beyond the HAR baseline. Next: P2 (firm news
+vs no news), after its interview.
