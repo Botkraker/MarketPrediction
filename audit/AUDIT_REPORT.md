@@ -1618,3 +1618,212 @@ the smallest gain the owner called worth having, so this is an absence measured 
 size, not only a lack of power. The same-day link between headline counts and price
 swings (§8c) does not carry into a forecast beyond the HAR baseline. Next: P2 (firm news
 vs no news), after its interview.
+
+## P2. Firm news vs no news (ADR-001, 2026-10-06)
+
+- **Pre-registration.** `audit/PREREG_P2.md`, frozen at tag `prereg-p2-v1` (commit
+  `d83223f`) before the design run.
+- **Code.** `preprocessing/p2.py` on `bench.py`; tests in `test_p2.py`
+  (`python3 -m pytest preprocessing`: 136 passed).
+- **Outputs.**
+  - `p2_controls_run1.json` (failed) and `p2_controls.json`;
+  - `p2_design.json`, committed in `bf6ca98` before the sealed run;
+  - `p2_confirm.json`, the one sealed run.
+- **Units.** Firm trade days from ALL_DATA.csv, duplicates dropped. A day is kept only if:
+  - the stock traded within 5 sessions before and after it;
+  - no trade-to-trade move beyond ±10% appears in the move or in its target window. The
+    screen was motivated by apparent unadjusted ex-dates, but most of what it removes is
+    something else (see "Units and drops").
+- **Tests.**
+  - c in AR_k = a + c·r·news + b·r + d·news + e·r_m, at 1 and 5 trades;
+  - g in |AR_1| on news, with firm intercepts and the firm's HAR;
+  - each read against the mean under 100 sets of random flags, with a 20-date block
+    bootstrap SE (all firms together), and Holm across the three.
+- **SESOI (owner).** c: 0.20 at 1 trade, 0.40 at 5 trades. g: 10% of the mean |AR_1|.
+
+**Controls** (design window, before the tag).
+- Run 1 failed on the volatility test. Shuffled targets gave 30 false finds and stale news
+  15, all negative. Firms with more news are calmer, and the one-intercept model read that
+  as a news effect.
+- Owner: firm intercepts in the volatility model only.
+- Run 2 passed (c1 / c5 / vol):
+  - planted signal found 78 / 82 / 75;
+  - shuffled targets, false finds 9 / 4 / 5;
+  - stale news, false finds 4 / 6 / 5.
+
+### Units and drops
+
+| window | firm trade days (firms) | previous trade > 5 sessions back | next trade > 5 sessions ahead | move > 10%, 1-trade window | move > 10%, 5-trade window |
+|---|---|---|---|---|---|
+| design 2016–2020 | 70,435 (76) | 974 (1.4%) | 972 (1.4%) | 454 (0.6%) | 1,126 (1.6%) |
+| sealed 2021–2022 | 25,283 (73) | 560 (2.2%) | 625 (2.5%) | 217 (0.9%) | 544 (2.2%) |
+
+- In the sealed window, "next trade" includes each firm's last trade before the data end
+  (2022-12-30).
+- Firms hit most often:
+  - gaps: AST, STIP, STEQ (design); AST, MAG, SMD (sealed);
+  - moves beyond 10%: STEQ, SIPHA, STIP (design); UADH, STIP, SERVI (sealed).
+- Counts by year and by firm are in the JSON outputs.
+- **The ±10% screen is mostly not an ex-date screen.**
+  - Of the 243 design-window moves beyond 10%, only 19 came one session after the previous
+    trade, the pattern of the ex-dates that motivated the screen.
+  - 122 span 2–5 sessions and 102 more than 5. Most are multi-session moves of thinly
+    traded stocks, where the ADR expects effects to live.
+- **The table is not a full reconciliation.** Its four categories overlap, and they leave
+  out rows lost to a missing target or control: last trades cut by the seal, the HAR
+  warm-up, a missing index level.
+  - Firm trade days minus units: 2,309 / 3,143 / 2,407 in design (c1 / c5 / vol) and
+    1,167 / 1,705 / 1,227 sealed.
+  - The rest is not itemised; P3's code should count every category.
+- **Phantom sessions were not dropped**, against data rule 2. The review found this.
+  - `p2.py` keeps firm rows dated on the 19 phantom sessions: 237 design rows (12 sessions,
+    every one with volume > 0) and 24 rows in 2021–22.
+  - On those dates the index level is mostly copied (r_m = 0 in 210 of the 237).
+  - 235 design c1 units have a next trade on a phantom session.
+  - Impact on the results: not computed.
+
+### Primary: headlines without price reports (decides G2)
+
+| run | test | units (news days) | effect vs random flags [95% CI] | Holm p | MDE | SESOI | verdict |
+|---|---|---|---|---|---|---|---|
+| design | c, 1 trade | 68,126 (2,940) | +0.095 [+0.046, +0.145] | < 0.001 | 0.071 | 0.20 | no effect worth having (drift with news) |
+| design | c, 5 trades | 67,292 (2,897) | −0.003 [−0.124, +0.118] | 0.96 | 0.173 | 0.40 | no effect worth having |
+| design | volatility | 68,028 (2,933) | +0.00158 [+0.00101, +0.00214] | < 0.001 | 0.00081 | 0.00130 | CHANNEL (bigger next move) |
+| **sealed** | c, 1 trade | 24,116 (841) | +0.093 [+0.017, +0.168] | 0.033 | 0.108 | 0.20 | **no effect worth having** (drift with news) |
+| **sealed** | c, 5 trades | 23,578 (826) | −0.004 [−0.143, +0.136] | 0.96 | 0.200 | 0.40 | **no effect worth having** |
+| **sealed** | volatility | 24,056 (837) | +0.00222 [+0.00127, +0.00318] | < 0.0001 | 0.00136 | 0.00121 | **CHANNEL** (bigger next move) |
+
+**G2 passed** on the volatility channel. In the sealed run the effect is 18.4% of the mean
+next-trade |AR| (0.01211).
+- The interval's lower end is 10.49% against a SESOI of 10%. An SE 6.2% larger would put
+  it inside, so "above the SESOI" is thin.
+- The CHANNEL verdict needs only a Holm p below 0.05 and an interval not inside ±SESOI, so
+  it does not depend on that margin.
+- Under the ADR, P3 targets this channel; the G2 review with the owner sets how.
+
+- The sealed volatility MDE (0.00136) came out above the 0.00099 projected in the
+  pre-registration, and above the SESOI. The effect cleared it.
+  - The projection came from planted iid flags. The real news flags cluster, so their
+    bootstrap SE is larger: 1.20 times the random-flag spread in design, 1.06 sealed.
+- Centring on iid random flags removes no bias, since their expected coefficient is zero
+  by construction. Protection against artefacts from the flags' structure came from the
+  stale-news control instead (volatility: 5 of 100).
+- Moves with news continue further into the next trade by about the same amount in both
+  windows: effect +0.095 design, +0.093 sealed (raw c 0.092 and 0.095). Both intervals stay
+  inside ±0.20.
+- The sealed interval excludes 0 only with the ±10% screen. Keeping those moves in gives
+  +0.147 [−0.014, +0.309], inconclusive (S3 below).
+- Without news, the next-trade continuation b is +0.070 in design and −0.014 in the sealed
+  run.
+
+### Every other arm and family
+
+| | design | sealed |
+|---|---|---|
+| all headlines | same verdicts: c 1 trade +0.098 (MDE 0.069); c 5 trades MDE 0.169; volatility +0.00153 (MDE 0.00081), CHANNEL | c 1 trade +0.083 [+0.010, +0.156] (MDE 0.104), no effect worth having; c 5 trades (MDE 0.203) no effect worth having; volatility +0.00221 (MDE 0.00132), CHANNEL |
+| price reports only (the rule 6 placebo) | c 5 trades (45 news days) −0.65 [−1.09, −0.21] (MDE 0.632), CHANNEL, Holm 0.012; c 1 trade and volatility (47 news days) inconclusive (MDE 0.361; 0.00543) | 6 news days: **not estimable** (the bootstrap pins the coefficient to 0 in resamples that miss them) |
+| S1 Dimson β | same verdicts as the primary (MDE 0.071 / 0.172 / 0.00082) | same verdicts as the primary (MDE 0.109 / 0.198 / 0.00133) |
+| S3 moves beyond ±10% kept | same verdicts (MDE 0.080 / 0.262 / 0.00093) | c 1 trade +0.147 [−0.014, +0.309] (MDE 0.231), **inconclusive**; c 5 trades (MDE 0.373) no effect worth having; volatility (MDE 0.00170) CHANNEL |
+| S4 leave-one-firm-out (range of the effect) | c1 0.088 to 0.104; c5 −0.025 to +0.026; vol 0.00148 to 0.00168 | c1 0.075 to 0.103; c5 −0.018 to +0.022; vol 0.00196 to 0.00235 |
+
+The volatility channel holds in every family except price reports only, which has too few
+news days to read: inconclusive in design, not estimable sealed. The sealed c1 verdict
+depends on the ±10% screen.
+
+### Deviations from the pre-registration
+
+None: `git diff prereg-p2-v1 -- preprocessing/p2.py` is empty.
+
+**Departures from the ADR P2 card, and who decided:**
+
+| Departure | Decided by |
+|---|---|
+| backward 5-session rule as well as forward | owner (T7) |
+| ±10% move screen | agent, under the owner's delegation |
+| firm intercepts in the volatility model | owner, after controls run 1 |
+| block bootstrap only (the card also names date-clustered SE) | owner (clustered SE runs small, §P0) |
+| centring on iid random flags | owner |
+| c decides; b < 0 is reported, not tested | owner, default stated at the interview |
+| news window "after the previous trade" (card: "previous session") | inherited from P0's `bench.firm_panel` |
+| \|r_m\| control in the volatility model | owner, default stated at the interview |
+| same-session range not conditioned on (T8 asks for it) | **nobody: an omission** |
+| phantom sessions kept (data rule 2 says drop them) | **nobody: an omission** |
+
+**Reconciling numbers in PREREG_P2's "What was known":**
+- The run counts 974 trade days with a previous trade more than 5 sessions back: 969 real
+  gaps plus 5 first-ever trades.
+- The probe's 947 came from `bench.firm_panel`, which restarts the gap count in 2016. The
+  rest of the difference was not traced.
+- The 24 of 3,844 headlines and the 17 drops / 4 rises came from scratch checks run on
+  2026-10-06. Those scripts are not kept in the repo.
+
+### Conclusion
+
+**Volatility.** After a day with news about a firm, that firm's next trade moves more than
+its recent swings predict. The effect shows in 2016–2020 and again in the sealed 2021–2022
+window, where it is 18% of the average next move and clears the 10% the owner called worth
+having. This is the daily channel G2 asks for.
+
+**Drift.** Moves with news also carry slightly further into the next trade, by about 0.09
+of the move in both windows. That is less than the 0.20 worth having.
+- In design the interval excludes 0 with or without the ±10% screen.
+- Sealed, it excludes 0 only with the screen (Holm p 0.033); without the screen it is
+  inconclusive.
+
+Over five trades there is nothing.
+
+**Caveats** (the second to fourth were raised by the review).
+- Headlines are date-only, so part of the volatility effect may be the first reaction to
+  news published after the close. D1 would separate the two.
+- **Corporate actions.** Prices are not adjusted for them. A dividend, detachment or
+  bonus-share headline dated on or before a trade, followed by an ex-date at the next
+  trade, gives a large |AR_1| with no reaction to news. Ex-dates below 10% pass the screen.
+  - How much of g this explains: not computed.
+  - The news main effect on AR_1 is positive in both windows (d +0.00100 design, +0.00153
+    sealed), which ex-date drops alone would not produce.
+  - Without a check, P3's word list could learn corporate-action words ("dividende",
+    "détachement", "AGO") as volatility words.
+- **T8.** The same-session range is not conditioned on; only |r_t| enters, linearly.
+- **Phantom sessions** are kept (see Units and drops).
+- The confirmation window covers two years.
+
+**G2 review (owner, 2026-10-06).**
+- P3's firm-event arm targets the volatility channel. Its labels are the size of the next
+  move beyond the in-fold firm HAR model, not the sign of the residual return on the P3
+  card.
+- No new data at this gate (D1, D2 and D3 to be revisited at G3).
+- The P3 card adds a volatility label only if G1 passed, and G1 did not. Using one for
+  firm events rests on G2 and this review, and PREREG_P3 must record it as such.
+- Next: P3, after its interview.
+
+### Review (2026-10-06)
+
+The owner asked for an independent review against the ADR. A subagent ran it, read-only,
+with the `engineering:code-review` skill. Findings, with numbers re-checked against the
+JSONs:
+- **No blocker.** The pre-registered result stands: `p2.py` is unchanged since the tag, the
+  verdicts follow PREREG §6, the seal held, and 136 tests passed.
+- **Corrected in this section:**
+  - the ±10% screen's description;
+  - the c1 screen dependence;
+  - the "whole interval above the SESOI" wording;
+  - news-day counts (45, not 47, for price-only c5);
+  - the placebo reading;
+  - MDEs added for every secondary family;
+  - the departures table;
+  - the drop reconciliation;
+  - the PREREG number sources.
+- **Tests added** (now 140 passed):
+  - the confirm guard now runs with the tag present;
+  - the ±10% screen windows;
+  - Dimson β is past-only;
+  - the verdict order.
+- **Open, for the owner** (post-hoc checks on 2016–2020 only; they cannot re-decide G2):
+  - the T8 range;
+  - corporate-action headlines;
+  - phantom sessions.
+- **For P3:**
+  - `--confirm` should also check that the code matches the tagged code;
+  - use an annotated tag (`prereg-p2-v1` is lightweight, `prereg-p1-v1` annotated);
+  - nulls should keep the flags' structure;
+  - the volatility baseline should include the news flag.

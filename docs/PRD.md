@@ -127,7 +127,13 @@ from here. The owner chose the recommended option on all four questions: design
 new data yet. **P0 done**: the test bench passes its controls and the owner approved its
 MDE table (G0, 2026-10-06, AUDIT_REPORT §P0). **P1 done**: news flow adds no forecast of
 the next session's swing worth having, in the design window or the sealed 2024+ run
-(G1 not passed, AUDIT_REPORT §P1). Next: P2, after its interview.
+(G1 not passed, AUDIT_REPORT §P1). **P2 done**: after a day with issuer news, a firm's next
+trade moves more than its recent swings predict (sealed 2021–22: +18% of the mean move; the
+interval's lower end, 10.5%, just clears the 10% worth having). Moves with news drift
+slightly further, below the smallest effect worth having; the sealed drift excludes 0 only
+with the ±10% move screen. G2 passed on the volatility channel (AUDIT_REPORT §P2, with the
+review's open checks: range, corporate-action headlines, phantom sessions). G2 review
+(owner): P3's firm events target that channel; no new data. Next: P3, after its interview.
 
 The 2026-09-30 status follows, unchanged except where marked.
 
