@@ -279,17 +279,19 @@ def noise_null(frame, features, news, fit, loss, base, seeds=SEEDS, offset=0, jo
     return np.array(pmap(one, range(seeds), jobs))
 
 
-def positive_control(frame, features, news, fit, target, h, loss, null, jobs=1) -> dict:
+def positive_control(frame, features, news, fit, target, h, loss, null, jobs=1, log=False) -> dict:
     """Plant z ~ N(0,1) in a COPY of the data (target += beta x sd(target) x z) and give z
     to the model, padded with k-1 surrogate columns so the arm keeps its size. beta is set
     by bisection so the median statistic over CALIBRATION_RUNS runs is 2.8, i.e. the effect
     sits at the MDE; 100 fresh runs must then find it in POWER_BAND of them, which holds
-    only if the harness's standard error is right."""
-    sd = frame[target].std()
+    only if the harness's standard error is right. log=True plants on the log scale, so a
+    variance target stays positive (P1)."""
+    sd = (np.log(frame[target]) if log else frame[target]).std()
 
     def one(beta, seed):
         f = frame.assign(planted=np.random.default_rng(seed).standard_normal(len(frame)))
-        f[target] = f[target] + beta * sd * f.planted
+        shift = beta * sd * f.planted
+        f[target] = f[target] * np.exp(shift) if log else f[target] + shift
         f, pad = with_surrogate(f, news, seed + 500_000, k=len(news) - 1, prefix="pad")
         return score(compare(fit(f, features + ["planted"] + pad), fit(f, features), h, loss,
                              null, n_boot=boots(loss)), loss)
@@ -343,7 +345,7 @@ def negative_controls(frame, features, news, fit, target, h, loss, base, null, j
     return out
 
 
-def controls(frame, features, news, fit, target, h, loss, jobs) -> dict:
+def controls(frame, features, news, fit, target, h, loss, jobs, log=False) -> dict:
     base = fit(frame, features)
     null = noise_null(frame, features, news, fit, loss, base, jobs=jobs)
     f, cols = with_surrogate(frame, news, SEED)          # bootstrap SE of a null comparison
@@ -351,7 +353,7 @@ def controls(frame, features, news, fit, target, h, loss, jobs) -> dict:
     return {"n": len(base), "news": news,
             "matched_noise": {"k": len(news), "mean": float(null.mean()), "sd": float(null.std(ddof=1)),
                               "se_boot_probe": se, "mde": 2.8 * float(np.hypot(null.std(ddof=1), se))},
-            "positive": positive_control(frame, features, news, fit, target, h, loss, null, jobs),
+            "positive": positive_control(frame, features, news, fit, target, h, loss, null, jobs, log),
             **negative_controls(frame, features, news, fit, target, h, loss, base, null, jobs)}
 
 
