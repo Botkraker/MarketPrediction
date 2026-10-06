@@ -1434,3 +1434,127 @@ sample at any horizon. Every null is stated with its minimum detectable effect, 
 of this shows that Tunisian news *cannot* predict the market. It shows that daily
 headline tone, measured this way, adds nothing that price history does not already
 carry. Price history alone gives a working three-week drawdown warning at the firm level.
+
+## P0. Test bench, controls and MDE table (ADR-001, 2026-10-06)
+
+Plan: ADR-001 §8, P0 card. The owner's decisions on ADR Q1–Q4 and on every P0 choice are
+in `STATUS.md`. Code: `preprocessing/bench.py`, tests `preprocessing/test_bench.py`
+(`python3 -m pytest preprocessing`: 130 passed).
+- The harness reproduces `h3.walk_forward_proba` and `baseline.walk_forward` exactly
+  (tests). It refits every transform in-fold and uses embargo max(5, h).
+- It seals index sessions from 2024-01-01 and firm sessions from 2021-01-01, unless
+  `--confirm` finds the tag `prereg-<phase>-v1` (tested).
+- Controls ran on the design window 2016-01-04 → 2023-12-29, 1,496 predictions per path.
+- Three runs, each in its own file. All are reported.
+
+### Controls (100 runs each; bands fixed by the owner before run 1)
+
+Planted signal found: band 72–88. False finds (either direction): at most 9.
+
+| run | null for log-loss | direction, log-loss: planted / shuffled / stale | next return, Clark-West: planted / shuffled / stale | G0 |
+|---|---|---|---|---|
+| 1 (`p0_results.json`) | 3 iid N(0,1) features | 86 / 3 / **19** | 87 / 2 / 7 | fail |
+| 2 (`p0_results_run2.json`) | phase-randomised surrogates of the news block | 79 / 5 / **10** | 82 / 2 / 7 | fail |
+| 3 (`p0_results_run3.json`) | surrogates, scaled by √(spread² + block-bootstrap SE²) | 84 / 0 / 0 | 82 / 2 / 7 | **pass** |
+
+- **Run 1.** Stale news (the real block shifted circularly at least 250 sessions away)
+  beat iid noise in 17 of 100 runs: slow-moving series beat white noise by luck. The
+  planted-signal calibration (10 runs) overshot: median statistic 4.73 against 2.8.
+- **Run 2.** The surrogates keep each news column's spectrum, the cross-correlation and the
+  exact values. Stale news still produced 10 false finds (6 better, 4 worse).
+  - A planted signal swung 1.76× the surrogate spread (normal approximation).
+  - The design-window block-bootstrap SE (0.00212) combined with the surrogate spread
+    (0.00142) gives 1.80× that spread.
+  - The approved limit of 9 came from a normal approximation; the exact binomial limit for
+    100 runs is 10 (P(≥ 10 | calibrated) = 0.028). The owner kept 9 and chose to widen the
+    yardstick.
+- **Run 3.** The planted signal at the MDE is found 84 times (median statistic 2.99 vs
+  target 2.8; spread 1.03 SE). The log-loss test is now conservative under the null: 0
+  false finds where a calibrated test shows about 5 (P(0) = 0.006). The cost is a larger
+  MDE: 0.0056 log-loss, against 0.0040 for the surrogate spread alone.
+- The Clark-West path was the same in every run and passed every time.
+
+Each yardstick change was decided from the control results (the re-read numbers below
+were also visible at the time) and fixed before the next run. The owner approved the
+MDE table below on 2026-10-06: **G0 passed.**
+
+### "News made the forecast worse", re-read (ADR T2)
+
+| | run 1 yardstick (iid) | run 2 (surrogates) | run 3 (validated) | Clark-West |
+|---|---|---|---|---|
+| H3a, four arms (stored Δ log-loss +0.0028 to +0.0030) | z 0.08–0.37 | z 0.81–1.09 | z 0.44–0.62, p 0.54–0.66 | not applicable |
+| original H1 (v2, 2014+), four arms | z 2.30–8.02 | z 1.91–8.59 | z 0.80–1.05, p 0.29–0.42 | −0.87 to −1.17, p 0.24–0.39 |
+
+Under the validated yardstick and under Clark-West, neither result shows harm: news did
+what random series of the same drift do. H1's original Diebold-Mariano "worse" (stored
+p 0.036–0.039 in three arms) does not survive the nested-model correction.
+
+**Provenance.** The committed `daily_features.parquet` does not reproduce
+`hypothesis_results.json` exactly. Same 2,678 predictions; DM p recomputed
+0.027 / 0.032 / 0.036 / 0.071 against stored 0.039 / 0.038 / 0.036 / 0.076
+(all / ex_price / placebo / orthogonal). Same verdict. This matches the gap in
+`docs/architecture.md` §7 item 3. Recomputed numbers are used from now on (owner,
+2026-10-06).
+
+### H1 rerun on v3 scores (P0 gap; a replication, exempt from the seal)
+
+H1 as pre-registered (OLS on the next return, `ret_lag0..2`, four arms), on v3 scores
+from 2016, phantom sessions removed. The orthogonal arm is residualised in-fold on
+`abs_ret_lag0`, `range_pct_lag0` and `log_headlines_lag0`, none of which is in the model
+(owner, 2026-10-05). 2,161 predictions, baseline AUC 0.5927. Clark-West decides (MSE
+target); McNemar and DM are H1's original tests.
+
+| arm | k | Δ MSE [95% CI] | Clark-West (p) | Holm (CW) | McNemar p | DM p | Δ AUC |
+|---|---|---|---|---|---|---|---|
+| all | 4 | −1.39e-08 [−7.78e-08, +4.64e-08] | 1.39 (0.164) | 0.49 | 0.363 | 0.693 | −0.0001 |
+| ex_price | 4 | −1.17e-08 [−7.51e-08, +4.68e-08] | 1.33 (0.183) | 0.49 | 0.491 | 0.723 | −0.0006 |
+| placebo | 4 | +5.16e-08 [−1.72e-08, +1.32e-07] | −0.70 (0.486) | 0.49 | 0.795 | 0.122 | −0.0050 |
+| orthogonal | 1 | −2.37e-08 [−8.99e-08, +3.96e-08] | 1.77 (0.077) | 0.31 | 0.103 | 0.538 | +0.0023 |
+
+- Holm minima: McNemar 0.41, DM 0.49.
+- Against surrogates (descriptive for an MSE target): z −1.19, −1.17, −0.18, −1.07.
+- Clark-West MDE 9.1e-08 to 1.0e-07 per arm.
+- No arm gains more than 0.02 AUC, so the tripwire did not trigger.
+
+**INCONCLUSIVE.** No arm passes, and H1 has no pre-registered smallest effect of
+interest. H1's arms carry 4 text-derived columns, more than the ADR's limit of 2 for new
+models; they are run as pre-registered.
+
+### MDE table (approved 2026-10-06)
+
+The smallest effect each planned primary test detects 80% of the time. Confirmation MDEs
+scale the design SE by √(design units / confirmation units), with units counted from dates
+and headline counts. No sealed price was read.
+
+| planned primary test | unit | design (n) | design MDE | confirmation (n) | confirmation MDE |
+|---|---|---|---|---|---|
+| P1 news block (3 features), Δ QLIKE vs HAR | index session | 1,493 | 0.0054 (1.9% of baseline 0.2866) | 665 | 0.0081 (2.8%) |
+| P2 term c, AR over 1 trade | firm trade day | 69,072 (1,243 dates) | 0.083 | 505 dates | 0.131 |
+| P2 term c, AR over 5 trades | firm trade day | 68,784 (1,239 dates) | 0.263 | 505 dates | 0.411 |
+| P3a word score vs firm reaction, \|r\| | firm event with issuer news | 3,208 | 0.049 | 970 | 0.090 |
+| P3b word score vs index move, \|r\| | session with non-price news | 1,997 | 0.063 | 665 | 0.109 |
+
+- **P1.** The target and HAR baseline are provisional, built for the MDE only. The null
+  uses surrogates of H3's tone, has_news and log_n as a stand-in until P1 builds its own
+  block (novelty). Three zero-range design sessions are not targets; the P1 prereg decides
+  how to treat them.
+- **P2.** Random news flags at the design rate (4.5%), 100 seeds.
+  - The date-clustered SE is smaller than the spread of the estimate across seeds:
+    0.030 vs 0.034 (1 trade), 0.094 vs 0.123 (5 trades). P2 inference therefore needs the
+    time-block bootstrap the P2 card lists.
+  - 957 design events have no trade within 5 sessions and are dropped, as the card asks.
+  - The 2021–22 rows carry no price-derived value.
+- **P3.** ADR T1's formula for one pre-specified score, |r| ≥ 2.8 / √n.
+
+### Implementation notes
+
+- The installed joblib (1.1.1) deadlocks under Python 3.12. Runs use a stdlib fork pool;
+  no dependency was changed.
+- Reproduce run 3: `OMP_NUM_THREADS=1 python3 preprocessing/bench.py --jobs 10 --output data/curated/p0_results_run3.json`.
+
+### Conclusion
+
+The bench passes its controls and its detection limits are known. Both "news made it
+worse" results were the cost of fitting extra parameters, not harm. H1 on the better v3
+sentiment still finds nothing. Next: P1 (index volatility), only after its interview and
+pre-registration.
