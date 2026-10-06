@@ -137,8 +137,10 @@ leave it in place but shrink it by 16%, to about the smallest effect worth havin
 (owner): P3's firm events target that channel; no new data. **P3 done**: a word list picked
 by price reactions adds no forecast gain worth having beyond v3 and the firm's own
 volatility, in design or sealed, and its words are unstable. G3 not passed, so the content
-route stops (Exit, AUDIT_REPORT §P3). Next: the owner chooses W (price-only early-warning
-write-up) or D1 (intraday timestamps).
+route stops (Exit, AUDIT_REPORT §P3). **W done**: H3c's price-only firm drawdown warning,
+calibrated in-fold (Platt), has a Brier score of 0.215 → 0.053 and a PR-AUC 2.1× the event
+rate. Its alarms are right 2.8× as often as chance, about three weeks ahead. AUDIT_REPORT
+§W also holds one table of every ADR-001 result. Next: the owner's call (D1 needs approval).
 
 The 2026-09-30 status follows, unchanged except where marked.
 
