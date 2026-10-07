@@ -1,8 +1,32 @@
+"""Scrape ilboursa market news with full timestamps (ADR-001, track D1).
+
+Resumable: one JSON file per requested date in --cache-dir. Ctrl-C is safe; rerun to continue.
+
+    python3 scrapers/scrape_ilboursa.py                      # 2014-01-01 -> today
+    python3 scrapers/scrape_ilboursa.py --start 2016-12-31 --stop 2016-01-01 --workers 4
+
+Output (';', utf-8-sig): headline;date;published_at;url;article_id;has_quote
+  headline, date      unchanged, so io_raw.py / build_audit.py keep working
+  published_at        YYYY-MM-DD HH:MM, Tunis time, as shown in the list
+  url                 site path (domain stripped)
+  article_id          site's sequential id; out-of-order ids flag back-dated timestamps
+  has_quote           1 if the row shows a listed security's quote cell. The quote VALUES are
+                      live at scrape time and are deliberately NOT stored (look-ahead).
+Side file <output>.saturated.txt: dates whose whole result window fell on that same day,
+so earlier articles of that day may be missing.
+"""
+import argparse
 import csv
+import json
+import os
+import random
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlparse
 
 import certifi
 import requests
@@ -19,12 +43,15 @@ except ImportError:
 
 URL = "https://www.ilboursa.com/marches/actualites_bourse_tunis"
 OUTPUT_FILE = "ilboursa_headlines.csv"
-START_DATE = date.today()
+CACHE_DIR = "ilboursa_cache"
 STOP_DATE = date(2014, 1, 1)
-STEP_DAYS = 1
-MAX_WORKERS = 20
+MAX_WORKERS = 6
 TIMEOUT = 25
-MAX_ATTEMPTS = 4
+MAX_ATTEMPTS = 5
+DELAY = (0.3, 1.0)
+
+QUOTE_RE = re.compile(r"[+-]?\d+,\d+\s*%")
+ID_RES = (re.compile(r"_(\d+)/?$"), re.compile(r"a,\d+,(\d+),"))
 
 HEADERS = {
     "User-Agent": (
@@ -41,14 +68,20 @@ thread_local = threading.local()
 print_lock = threading.Lock()
 
 
+class BadPage(Exception):
+    pass
+
+
+def log(msg):
+    with print_lock:
+        print(msg, flush=True)
+
+
+# ------------------------------------------------------------------ session
 def new_session():
     s = requests.Session()
-    retry = Retry(
-        total=4,
-        backoff_factor=0.8,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "POST"],
-    )
+    retry = Retry(total=4, backoff_factor=0.8, status_forcelist=[429, 500, 502, 503, 504],
+                  allowed_methods=["GET", "POST"])
     adapter = HTTPAdapter(max_retries=retry, pool_connections=1, pool_maxsize=1)
     s.mount("https://", adapter)
     s.headers.update(HEADERS)
@@ -60,18 +93,10 @@ def new_session():
 def refresh_token(s):
     r = s.get(URL, timeout=TIMEOUT)
     r.raise_for_status()
-    tree = lhtml.fromstring(r.content)
-    token = tree.xpath("//input[@name='__RequestVerificationToken']/@value")
+    token = lhtml.fromstring(r.content).xpath("//input[@name='__RequestVerificationToken']/@value")
     if not token:
         raise RuntimeError("Anti-forgery token not found")
     return token[0]
-
-
-def get_session_and_token():
-    if not hasattr(thread_local, "session"):
-        thread_local.session = new_session()
-        thread_local.token = refresh_token(thread_local.session)
-    return thread_local.session, thread_local.token
 
 
 def reset_session():
@@ -79,44 +104,78 @@ def reset_session():
     thread_local.token = refresh_token(thread_local.session)
 
 
-def parse_rows(content):
+def get_session_and_token():
+    if not hasattr(thread_local, "session"):
+        reset_session()
+    return thread_local.session, thread_local.token
+
+
+# ------------------------------------------------------------------ parsing
+def normalise_href(href):
+    href = (href or "").strip()
+    if href.startswith("http"):
+        p = urlparse(href)
+        return p.path + (f"?{p.query}" if p.query else "")
+    return href
+
+
+def article_id(href):
+    for rx in ID_RES:
+        m = rx.search(href)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def parse_rows_full(content):
     tree = lhtml.fromstring(content)
-    rows = []
+    out = []
     for tr in tree.xpath("//table[@id='tabQuotes']//tr"):
         span = tr.xpath(".//span[@class='sp1']/text()")
         link = tr.xpath(".//a[@href]")
         if not span or not link:
             continue
-        raw_dt = span[0].strip()
         try:
-            dt = datetime.strptime(raw_dt, "%d/%m/%Y %H:%M")
+            dt = datetime.strptime(span[0].strip(), "%d/%m/%Y %H:%M")
         except ValueError:
             continue
-        headline = " ".join(link[0].text_content().split())
-        href = link[0].get("href")
-        rows.append((href, headline, dt))
-    return rows
+        a = link[0]
+        rest = " ".join(tr.xpath(".//text()[not(ancestor::a)]"))
+        out.append({"href": normalise_href(a.get("href")),
+                    "headline": " ".join(a.text_content().split()),
+                    "dt": dt,
+                    "has_quote": int(bool(QUOTE_RE.search(rest)))})
+    return out
 
 
+def parse_rows(content):
+    """(href, headline, datetime) triples; kept for preprocessing/test_scrape_ilboursa.py."""
+    return [(r["href"], r["headline"], r["dt"]) for r in parse_rows_full(content)]
+
+
+# ------------------------------------------------------------------ fetching
 def fetch_date(d):
     last_err = None
     for attempt in range(MAX_ATTEMPTS):
         try:
+            time.sleep(random.uniform(*DELAY))
             s, token = get_session_and_token()
-            data = {
-                "dateActu": d.strftime("%Y-%m-%d"),
-                "__Invariant": "dateActu",
-                "__RequestVerificationToken": token,
-            }
+            data = {"dateActu": d.strftime("%Y-%m-%d"), "__Invariant": "dateActu",
+                    "__RequestVerificationToken": token}
             r = s.post(URL, data=data, timeout=TIMEOUT)
             if r.status_code in (400, 403):
-                reset_session()
-                continue
+                raise BadPage(f"HTTP {r.status_code}")
             r.raise_for_status()
-            return parse_rows(r.content)
+            rows = parse_rows_full(r.content)
+            if not rows and b"tabQuotes" not in r.content:
+                raise BadPage("news table missing")
+            if (rows and d < date.today() - timedelta(days=30)
+                    and max(x["dt"].date() for x in rows) > d + timedelta(days=7)):
+                raise BadPage("server ignored the requested date")
+            return rows
         except Exception as e:
             last_err = e
-            time.sleep(1 + attempt)
+            time.sleep(2 * (attempt + 1))
             try:
                 reset_session()
             except Exception:
@@ -124,81 +183,113 @@ def fetch_date(d):
     raise RuntimeError(f"{d}: {last_err}")
 
 
-def build_dates():
-    dates = []
-    d = START_DATE
-    while d >= STOP_DATE:
+# ------------------------------------------------------------------ cache
+def cache_path(cache, d):
+    return cache / f"{d.isoformat()}.json"
+
+
+def save(cache, d, rows):
+    payload = {
+        "requested": d.isoformat(),
+        "saturated": bool(rows) and min(r["dt"].date() for r in rows) >= d,
+        "rows": [[r["href"], r["headline"], r["dt"].strftime("%Y-%m-%d %H:%M"), r["has_quote"]]
+                 for r in rows],
+    }
+    tmp = cache_path(cache, d).with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, cache_path(cache, d))
+
+
+def build_dates(start, stop):
+    dates, d = [], start
+    while d >= stop:
         dates.append(d)
-        d -= timedelta(days=STEP_DAYS)
+        d -= timedelta(days=1)
     return dates
 
 
-def main():
-    start = time.time()
-    dates = build_dates()
-    print(f"Dates to query: {len(dates)}")
-
-    articles = {}
-    failed = []
-    lock = threading.Lock()
-
-    def collect(rows):
-        with lock:
-            for href, headline, dt in rows:
-                if dt.date() < STOP_DATE:
-                    continue
-                # Keep href in the VALUE too: articles.values() below would
-                # otherwise drop the URL that is sitting right here as the key.
-                articles[href] = (headline, dt, href)
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(fetch_date, d): d for d in dates}
-        done = 0
-        for future in as_completed(futures):
-            d = futures[future]
-            try:
-                collect(future.result())
-            except Exception as e:
-                failed.append(d)
-                with print_lock:
-                    print(f"Failed {e}")
-            done += 1
-            if done % 100 == 0:
-                with print_lock:
-                    print(f"{done}/{len(dates)} dates done, {len(articles)} unique headlines")
-
-    for d in list(failed):
-        try:
-            thread_local.__dict__.clear()
-            collect(fetch_date(d))
-            failed.remove(d)
-        except Exception as e:
-            print(f"Failed again {e}")
+def write_csv(cache, dates, output, stop):
+    articles, conflicts, saturated = {}, 0, []
+    for d in dates:
+        p = cache_path(cache, d)
+        if not p.exists():
+            continue
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        if payload["saturated"]:
+            saturated.append(payload["requested"])
+        for href, headline, ts, has_quote in payload["rows"]:
+            dt = datetime.strptime(ts, "%Y-%m-%d %H:%M")
+            if dt.date() < stop:
+                continue
+            if href in articles and articles[href][1] != dt:
+                conflicts += 1
+                continue
+            articles.setdefault(href, (headline, dt, href, has_quote))
 
     rows_out = sorted(articles.values(), key=lambda x: x[1], reverse=True)
+    with open(output, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow(["headline", "date", "published_at", "url", "article_id", "has_quote"])
+        for headline, dt, href, has_quote in rows_out:
+            w.writerow([headline, dt.strftime("%Y-%m-%d"), dt.strftime("%Y-%m-%d %H:%M"),
+                        href, article_id(href), has_quote])
+    Path(f"{output}.saturated.txt").write_text("\n".join(sorted(saturated)), encoding="utf-8")
+    return len(rows_out), conflicts, len(saturated)
 
-    # parse_rows() already parses a full "%d/%m/%Y %H:%M" timestamp and captures
-    # the article href. Earlier revisions computed both and then wrote only the
-    # date, discarding real time-of-day on ~26.6k rows (AUDIT_REPORT.md section 3.1).
-    # `headline` and `date` are kept first and unchanged so existing loaders
-    # (preprocessing/io_raw.py, audit/build_audit.py) are unaffected; the new
-    # columns are additive.
-    #
-    # Why time-of-day matters: headlines currently carry no clock time, so
-    # features.py must assume a headline dated D may only predict sessions
-    # STRICTLY after D -- a published-at-18:00 headline would otherwise "predict"
-    # a close that already happened. With real timestamps, same-session alignment
-    # becomes possible for this source (BVMT closes ~14:10 Tunis time).
-    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f, delimiter=";")
-        writer.writerow(["headline", "date", "published_at", "url"])
-        for headline, dt, href in rows_out:
-            writer.writerow([headline, dt.strftime("%Y-%m-%d"),
-                             dt.strftime("%Y-%m-%d %H:%M"), href])
 
-    print(f"Saved {len(rows_out)} headlines to {OUTPUT_FILE} in {time.time() - start:.1f}s")
+# ------------------------------------------------------------------ main
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--output", default=OUTPUT_FILE)
+    ap.add_argument("--cache-dir", default=CACHE_DIR)
+    ap.add_argument("--start", type=date.fromisoformat, default=date.today())
+    ap.add_argument("--stop", type=date.fromisoformat, default=STOP_DATE)
+    ap.add_argument("--workers", type=int, default=MAX_WORKERS)
+    ap.add_argument("--refresh-days", type=int, default=3,
+                    help="re-fetch the most recent N days even if cached (default 3)")
+    ap.add_argument("--csv-only", action="store_true", help="rebuild the CSV from the cache, no requests")
+    args = ap.parse_args()
+
+    t0 = time.time()
+    cache = Path(args.cache_dir)
+    cache.mkdir(parents=True, exist_ok=True)
+    dates = build_dates(args.start, args.stop)
+    recent = date.today() - timedelta(days=args.refresh_days)
+    todo = [] if args.csv_only else [d for d in dates if d >= recent or not cache_path(cache, d).exists()]
+    log(f"Dates in range: {len(dates)} | to fetch: {len(todo)} | cache: {cache.resolve()}")
+
+    failed = []
+    ex = ThreadPoolExecutor(max_workers=args.workers)
+    try:
+        futures = {ex.submit(fetch_date, d): d for d in todo}
+        for i, fut in enumerate(as_completed(futures), 1):
+            d = futures[fut]
+            try:
+                save(cache, d, fut.result())
+            except Exception as e:
+                failed.append(d)
+                log(f"Failed {e}")
+            if i % 100 == 0 or i == len(todo):
+                log(f"{i}/{len(todo)} dates done, {len(failed)} failed, {time.time() - t0:.0f}s")
+    except KeyboardInterrupt:
+        log("Interrupted. Finished dates are cached; rerun the same command to resume.")
+        ex.shutdown(wait=False, cancel_futures=True)
+        return
+    ex.shutdown()
+
+    for d in sorted(failed):
+        try:
+            save(cache, d, fetch_date(d))
+            failed.remove(d)
+        except Exception as e:
+            log(f"Failed again {e}")
+
+    n, conflicts, n_sat = write_csv(cache, dates, args.output, args.stop)
+    log(f"Saved {n} headlines to {args.output} in {time.time() - t0:.0f}s")
+    log(f"Timestamp conflicts (same url, different time): {conflicts}")
+    log(f"Saturated dates (day may be incomplete): {n_sat} -> {args.output}.saturated.txt")
     if failed:
-        print(f"Dates still failing: {sorted(str(d) for d in failed)}")
+        log(f"Dates still failing (rerun to retry): {[str(d) for d in sorted(failed)]}")
 
 
 if __name__ == "__main__":
