@@ -2338,3 +2338,28 @@ nobody had analysed.
   words) adds nothing; the effect is the publication itself.
 - **Price history alone still warns of firm drawdowns** at about 2.5 times the base rate,
   about 15 sessions ahead, with usable calibrated probabilities.
+
+### F3 After-close headlines by type (ADR-002 F3, descriptive only)
+
+`python3 preprocessing/f.py --types` → `data/curated/f_types.json`.
+
+**Method.**
+- The headlines are issuer headlines with price reports excluded, one row per (headline,
+  issuer), timed as in P2t against the BVMT calendar.
+- Types come from keyword rules, applied in this order:
+  1. *dividende* → dividends;
+  2. *résultat, bénéfice, chiffre d'affaires, revenus, indicateurs d'activité, produit net
+     bancaire, PNB, perte, déficit, états financiers, comptes* → earnings;
+  3. everything else → other.
+
+| window | after close: earnings / dividends / other (n) | before close (n) | untimed (n) |
+|---|---|---|---|
+| 2016–20 | 42% / 4% / 54% (734) | 47% / 4% / 49% (1,981) | 34% / 2% / 64% (1,167) |
+| 2021–22 | 39% / 3% / 58% (222) | 53% / 2% / 46% (648) | 30% / 3% / 67% (320) |
+| 2023–26 | 48% / 3% / 49% (444) | 40% / 2% / 58% (881) | 32% / 8% / 61% (874) |
+
+Earnings news is not more common after the close than before it. The timing effect is
+therefore not a by-product of after-close news being mostly results announcements.
+
+The rules are coarse: "other" mixes governance, contracts and sector news. No test was run
+on these types.

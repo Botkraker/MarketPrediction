@@ -26,6 +26,7 @@ Run: python3 preprocessing/f.py --power     -> data/curated/f_power.json
      python3 preprocessing/f.py --overlap   -> data/curated/f_d2_overlap.json
      OMP_NUM_THREADS=1 python3 preprocessing/f.py --check     -> data/curated/f_check.json
      OMP_NUM_THREADS=1 python3 preprocessing/f.py --confirm   -> data/curated/f_confirm.json, once
+     python3 preprocessing/f.py --types     -> data/curated/f_types.json (F3, descriptive)
 """
 from __future__ import annotations
 
@@ -50,6 +51,9 @@ READ = pd.read_csv                 # the real reader, kept before any swap
 TAG, F_START = "prereg-f-v1-a1", "2023-01-01"   # a1: zero gaps clipped (PREREG_F §9)
 ADR1 = ("2021-01-01", "2022-12-30")          # bench.FIRM_SEAL, FIRM_END as tagged: the check
 GAPS = ["log_gap", "log_back_gap"]           # trading-gap secondary (owner)
+DIVIDENDS = r"dividende"                     # F3 headline types (owner: keyword rules)
+EARNINGS = (r"r[ée]sultat|b[ée]n[ée]fice|chiffre d.affaires|revenus|indicateurs d.activit|"
+            r"produit net bancaire|\bpnb\b|perte|d[ée]ficit|[ée]tats financiers|comptes")
 
 END = "2026-09-15"                 # last canonical headline; PREREG_F fixes the D2 end date
 WINDOWS = {"design": ("2016-01-04", "2020-12-31"), "sealed": ("2021-01-04", "2022-12-30"),
@@ -242,6 +246,30 @@ def check() -> dict:
     return out
 
 
+def types() -> dict:
+    """ADR-002 F3, descriptive only: issuer headlines (price reports out) by type and by
+    publication time, per window. p2t.timed_news is run with each type's pattern in place of
+    its corporate-action one, so rows, issuers and times are P2t's. Dividends first, then
+    earnings, else other. Timing as in P2t, against the BVMT calendar."""
+    with patched(p2t, "CORPORATE", DIVIDENDS):
+        news = p2t.timed_news()
+    with patched(p2t, "CORPORATE", EARNINGS):
+        earn = p2t.timed_news().corporate.to_numpy()
+    news = news.assign(type=np.where(news.corporate, "dividends", np.where(earn, "earnings", "other")))
+    news = news[~news.is_price_report]
+    cal = pd.DatetimeIndex(pd.read_csv(DEFAULT_CALENDAR).session_date).difference(phantom_sessions())
+    j = cal.searchsorted(pd.DatetimeIndex(news.day))
+    news = news[j < len(cal)].assign(session=cal[j[j < len(cal)]])
+    minutes = news.published_at.dt.hour * 60 + news.published_at.dt.minute
+    news["timing"] = np.where(news.published_at.isna(), "untimed",
+                              np.where((news.day == news.session) & (minutes >= p2t.CLOSE), "post", "pre"))
+    out = {}
+    for w, (a, b) in WINDOWS.items():
+        g = news[(news.session >= a) & (news.session <= b)]
+        out[w] = {t: {k: int(v) for k, v in g[g.timing == t].type.value_counts().items()} for t in ("post", "pre", "untimed")}
+    return out
+
+
 def save(name: str, res: dict) -> Path:
     path = h3.CURATED / f"{name}.json"
     with open(path, "w") as fh:
@@ -255,7 +283,11 @@ def main() -> None:
     ap.add_argument("--overlap", action="store_true")
     ap.add_argument("--check", action="store_true", help="reproduce the ADR-001 sealed results")
     ap.add_argument("--confirm", action="store_true", help="the one replication run; needs prereg-f-v1")
+    ap.add_argument("--types", action="store_true", help="F3: after-close headlines by type (descriptive)")
     args = ap.parse_args()
+    if args.types:
+        res = types()
+        print(json.dumps(res, indent=2), "->", save("f_types", res))
     if args.check:
         res = check()
         print(res, "->", save("f_check", res))
