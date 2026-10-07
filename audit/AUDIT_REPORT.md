@@ -449,6 +449,9 @@ wording, and the remedy is a larger model rather than more instruction.
 "Le Tunindex termine sur une note stable (+0,08%)". Concentrated in the three
 largest sources — ilboursa 11.9%, kapitalis 11.2%, leconomistmaghrebin 9.3%.
 
+> **Corrected in §8h.7b (2026-09-28):** these are v1-pattern figures. Under the v2 pattern in
+> use since §8e S1 the share is **3.74%** (1,722 of 46,013). The original text is kept.
+
 Measured on the 2,356 such headlines carrying an explicit direction word:
 
 | check | r | sign agreement |
@@ -1087,6 +1090,9 @@ the 1,036 English canonical rows contains any index token at all.
 Stale copies remain in `preprocessing/config.py:136`, `README.md` and §8d above. They are
 left in place rather than silently rewritten, per the rule that the evidence chain records
 corrections rather than overwriting history.
+
+*2026-10-07 (ADR-002 F1):* `config.py` now quotes 3.74%; §8d carries a correction note
+pointing here; `README.md` no longer quotes a share.
 
 **The |return| autocorrelation +0.387 is window-specific.** It holds on the 2014+ sample
 (recomputed +0.3868); on the full 4,167-session 2010+ sample it is **+0.4438**. The
