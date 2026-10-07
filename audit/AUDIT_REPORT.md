@@ -2250,3 +2250,91 @@ serving `ALL_DATA.csv` reads from the joined prices. On the ADR-001 sealed windo
 reproduces `p2_confirm.json`, `p2t_confirm.json` and `w_results.json` to 1e-9.
 
 Pre-registration: `audit/PREREG_F.md`.
+
+### F2.4 The replication: one run on 2023-01-01 → 2026-09-15 (`prereg-f-v1-a1`)
+
+**Commands.**
+- `OMP_NUM_THREADS=1 python3 preprocessing/f.py --confirm` → `data/curated/f_confirm.json`.
+- W, by a guarded call of the tagged `f.w_run` (PREREG_F §9, a2) → `data/curated/f_w_confirm.json`.
+
+**Deviations** (PREREG_F §9). Both were decided without sight of any result.
+- **a1.** The first run under `prereg-f-v1` crashed on `log(0)` in the trading-gap secondary,
+  before writing or printing anything. Zero gaps are now clipped at 1 session (owner).
+- **a2.** The tagged runner did not call W. W was run once, separately, with its tagged code.
+
+**Decisive family** (Holm across the three; each effect as a share of the run's mean
+|AR_1|, 0.01251):
+
+| test | effect | 95% interval | MDE | SESOI | Holm p | verdict |
+|---|---|---|---|---|---|---|
+| **P2t after close (g_post)** | **+43.0%** (+0.00539) | [+29.8%, +56.3%] | 19.0% | 10% | < 0.0001 | **CHANNEL** |
+| P2 pooled news-day volatility | +15.5% (+0.00194) | [+9.3%, +21.7%] | 8.9% | 10% | < 0.0001 | CHANNEL |
+| P2t before close (g_pre) | +6.4% (+0.00080) | [−4.8%, +17.6%] | 16.0% | 10% | 0.263 | INCONCLUSIVE |
+
+**Reading: CONFIRMED.** After-close firm news is followed by a bigger next move, on data
+nobody had analysed.
+
+**Units.**
+- P2t: 44,489 volatility units on 912 dates. Flagged days: 365 after close, 749 before
+  close, 661 untimed.
+- P2: 47,304 firm trade days from 73 firms. Dropped:
+  - previous trade more than 5 sessions back: 801;
+  - next trade more than 5 sessions ahead: 861;
+  - a move over 10% in the 1-trade window: 542;
+  - a move over 10% in the 5-trade window: 1,337.
+
+**Same tests, three windows:**
+
+| | design 2016–20 | sealed 2021–22 | **F 2023–26** |
+|---|---|---|---|
+| g_post | +34.1% CHANNEL | +47.4% CHANNEL | **+43.0% CHANNEL** |
+| g_pre | +4.3% INCONCLUSIVE | +9.4% INCONCLUSIVE | +6.4% INCONCLUSIVE |
+| P2 pooled vol | about 12% CHANNEL | about 18% CHANNEL | +15.5% CHANNEL |
+
+**Secondary** (never decisive):
+
+| check | g_post | g_pre | P2 vol |
+|---|---|---|---|
+| all headlines (price reports in) | +43.0% [+29.8, +56.3] | +6.4% [−4.8, +17.6] | +15.5% [+9.3, +21.7] |
+| corporate-action headlines removed | +42.4% [+28.5, +56.2] | +8.1% [−3.5, +19.7] | |
+| close 14:00 / 14:30 | +43.3% / +45.4% | +5.6% / +6.6% | |
+| + log trading gaps (a1) | +42.2% [+28.7, +55.6] | +8.0% [−3.2, +19.3] | +16.9% [+10.6, +23.1] |
+| Dimson-beta target | | | +16.2% [+9.6, +22.8] |
+| moves over 10% kept | | | +25.3% [+8.8, +41.9] |
+| leave one firm out | | | +14.2% (without ARTES) to +17.4% (without TAIR) |
+
+- g_untimed: +3.9% [−7.7%, +15.5%].
+- g_post − g_pre: +0.00464 [+0.00300, +0.00627].
+- P2's drift tests:
+  - c1 +0.045 [−0.025, +0.114] against a SESOI of 0.20, and c5 +0.083 [−0.064, +0.229]
+    against 0.40: both NO EFFECT WORTH HAVING, as in the sealed run;
+  - the price-only arm has 6 news days, so it is INCONCLUSIVE.
+- Dividend-adjusted returns: not run (owner).
+
+**W on 2023+** (screened; calibrators fitted on earlier predictions only; scored 2023-01-02 →
+2026-08-17):
+
+| | ADR-001 W (2019–22) | **F (2023–26)** |
+|---|---|---|
+| PR-AUC [95%] | 0.119 [0.104, 0.140] | **0.104 [0.089, 0.122]** |
+| event rate (lift) | 0.057 (2.08×) | 0.042 (**2.47×**) |
+| Brier, raw → Platt | 0.215 → 0.053 | 0.203 → 0.040 |
+| log loss, raw → Platt | 0.635 → 0.214 | 0.609 → 0.169 |
+| alarms at H3c's threshold: precision / recall | 16.0% / 15.2% | 12.8% / 14.0% |
+| episodes detected, median lead | 122 of 611, 15 sessions | 73 of 426, 15 sessions |
+
+- **Rule: REPLICATES.** The lower bound, 0.089, is above the event rate, 0.042.
+- Unscreened sample: PR-AUC 0.174 [0.149, 0.201] against an event rate of 0.068.
+- By year, PR-AUC was 0.099, 0.100, 0.095 and 0.137 for 2023 to 2026.
+
+**What it means.**
+- **ADR-002's open weakness is closed.** The project's one positive result now holds on a
+  window that no spec had touched:
+  - after issuer news published after the 14:10 close, the stock's next trade moves more than
+    its own recent volatility predicts, by about 43% of an average move;
+  - news the market could already trade on the same day shows no such effect we can detect
+    (MDE 16%, so a small effect is not excluded).
+- **The content results stand as ADR-001 left them.** What the headlines say (v3 tone, P3's
+  words) adds nothing; the effect is the publication itself.
+- **Price history alone still warns of firm drawdowns** at about 2.5 times the base rate,
+  about 15 sessions ahead, with usable calibrated probabilities.

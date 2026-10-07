@@ -214,8 +214,12 @@ python3 docs/make_figures.py
   not run. Every result in one table:
   [Summary of ADR-001 results](audit/AUDIT_REPORT.md#summary-of-adr-001-results), then
   [§P2t](audit/AUDIT_REPORT.md#p2t-p2s-channel-split-by-publication-time-d1-adr-001-10-2026-10-07).
-- **ADR-002** (finishing the project): **accepted, option B.** Rerun P2, P2t and W once,
-  unchanged, on firm prices for 2023–26, then write up.
+- **ADR-002** (finishing the project): **accepted, option B.** P2, P2t and W were rerun once,
+  unchanged, on firm prices for 2023–26 that no test had used.
+  - **The after-close result is confirmed:** +43% of an average move, [+30%, +56%].
+  - W replicates.
+  - Evidence: [AUDIT_REPORT §F2.4](audit/AUDIT_REPORT.md#f24-the-replication-one-run-on-2023-01-01--2026-09-15-prereg-f-v1-a1),
+    pre-registration [PREREG_F](audit/PREREG_F.md). The write-up comes next.
 - Artifacts that no committed script rebuilds:
   [AUDIT_REPORT §8i.8](audit/AUDIT_REPORT.md#8i8-what-is-still-orphaned).
 

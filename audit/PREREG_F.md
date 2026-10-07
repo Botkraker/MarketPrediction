@@ -208,9 +208,21 @@ its prices before the tag.
   - F's guard now requires `prereg-f-v1-a1`.
 - **Unchanged.** Decisive tests, reading, data and every other secondary.
 
+**a2, 2026-10-07: W was run by a separate call** (procedural; no code change).
+
+- **The omission.** `f.replicate`, as tagged, runs P2 and P2t but never calls `f.w_run`. The
+  W part of §3–§4 was therefore missing from `f_confirm.json`.
+- **The run.** W was run once with the tagged `f.w_run` on 2023-01-01 → 2026-09-15, by a
+  guarded call:
+  - the tag `prereg-f-v1-a1` must exist and `preprocessing/` must be identical to it;
+  - the call refuses if `f_w_confirm.json` already exists.
+  - It wrote `f_w_confirm.json`.
+- **What this does not change.** W's spec and rule (§4) have no free choice. The call was
+  made after P2's and P2t's results had been seen.
+
 ## 10. Outputs
 
 - `data/curated/f_power.json`, `f_d2_overlap.json`, `f_check.json`;
-- `f_confirm.json`, written once.
+- `f_confirm.json` (P2, P2t, the Holm family) and `f_w_confirm.json` (W), each written once.
 
 AUDIT_REPORT §F reports every test, arm and secondary with its MDE, and every deviation.
