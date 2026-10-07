@@ -140,7 +140,11 @@ volatility, in design or sealed, and its words are unstable. G3 not passed, so t
 route stops (Exit, AUDIT_REPORT §P3). **W done**: H3c's price-only firm drawdown warning,
 calibrated in-fold (Platt), has a Brier score of 0.215 → 0.053 and a PR-AUC 2.1× the event
 rate. Its alarms are right 2.8× as often as chance, about three weeks ahead. AUDIT_REPORT
-§W also holds one table of every ADR-001 result. Next: the owner's call (D1 needs approval).
+§W also holds one table of every ADR-001 result. **D1 + P2t done** (2026-10-07): with
+ilboursa publication times, P2's channel turns out to be the first reaction to issuer news
+published after the close. That news is followed by a next-trade move 34% (design) and 47%
+(sealed) bigger than usual. Pre-close news shows no clear extra move (AUDIT_REPORT §P2t).
+Next: the owner's call.
 
 The 2026-09-30 status follows, unchanged except where marked.
 

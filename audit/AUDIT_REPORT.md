@@ -2091,3 +2091,68 @@ the firm level (W).
 
 **Next** (ADR §3): D1 (publication times, which needs approval) is the one lever left that
 could sharpen the news result.
+
+## P2t. P2's channel split by publication time (D1, ADR-001 §10, 2026-10-07)
+
+- **D1 data.** The owner re-scraped ilboursa with publication times
+  (`data/raw/ilboursa_d1/`, commit `4b465fc`).
+  - The original raw file is kept, because the pipeline's row ids are positional
+    (`io_raw.py:67`) and thousands of gold labels are keyed by them.
+  - Audit, times only:
+    - all 17,265 canonical ilboursa headlines are timed;
+    - 67.6% were published on a weekday before 14:10;
+    - there is no per-day cap (at most 26 articles a day);
+    - 0.42% of article ids are back-dated;
+    - 70.8% of the 2016–22 firm news is ilboursa.
+- **Pre-registration.** `audit/PREREG_P2T.md`, at the annotated tag `prereg-p2t-v1`
+  (`9ad24d4`). The design result was committed in `809a54a` before the sealed run. Code:
+  `preprocessing/p2t.py`; tests: 150 passed.
+- **Test.** P2's volatility model with the news flag split three ways:
+  - *after-close*: published on the trade date at or after 14:10 (ADR §2);
+  - *before-close*;
+  - *untimed* (other outlets).
+- **Decisive:** the two timed coefficients, Holm across them; SESOI 10% of the mean
+  |AR_1| (P2's).
+
+**Controls** (PREREG_P2T §7).
+- Run 1: before-close stale news gave 10 false finds.
+- Run 2: with the wider yardstick for both, after-close was over-powered (91 found).
+- Owner: each test keeps the yardstick that passed all its own controls: P0's rule for
+  before-close, the bootstrap SE alone for after-close.
+- Run 3: all pass. Before-close 85 / 1 / 0, after-close 84 / 6 / 5 (planted found /
+  shuffled / stale).
+
+| run | flag | news days | effect (share of mean \|AR_1\|) [95% CI] | MDE | Holm p | verdict |
+|---|---|---|---|---|---|---|
+| design 2016–2020 | after-close | 576 | +0.00445 (+34.1%) [+0.00327, +0.00562] | 0.00167 | < 0.0001 | CHANNEL |
+| design | before-close | 1,722 | +0.00056 (+4.3%) [−0.00023, +0.00136] | 0.00114 | 0.17 | INCONCLUSIVE |
+| design | untimed (reported) | 971 | +0.00063 (+4.8%) [−0.00040, +0.00165] | 0.00147 | — | — |
+| **sealed 2021–2022** | **after-close** | 151 | **+0.00574 (+47.4%)** [+0.00327, +0.00821] | 0.00353 | < 0.0001 | **CHANNEL** |
+| **sealed** | before-close | 529 | +0.00113 (+9.4%) [−0.00060, +0.00287] | 0.00248 | 0.20 | INCONCLUSIVE |
+| sealed | untimed (reported) | 235 | +0.00151 (+12.5%) [−0.00071, +0.00373] | 0.00317 | — | — |
+
+**After-close minus before-close:** +0.00389 [+0.00264, +0.00513] in design and +0.00459
+[+0.00193, +0.00725] sealed.
+
+The same verdicts hold in every secondary:
+- all headlines;
+- corporate-action headlines removed;
+- close at 14:00 or at 14:30.
+
+Sealed after-close effects there range from +0.00505 to +0.00588.
+
+**Reading: TIMING** (pre-registered; decided by the sealed run).
+- P2's news-day volatility channel is the market's **first reaction to issuer news
+  published after the close**, priced at the next trade.
+- News published before the close shows no clear extra move at the next trade: a 4–9%
+  point estimate, inconclusive.
+- So there is no evidence of slow digestion. The sealed MDE (0.00248) is above the SESOI,
+  though, so digestion of up to about a quarter of an average move cannot be excluded:
+  the upper end is 0.00287 against a mean |AR_1| of 0.01211.
+
+**Deviations from the pre-registration:** none.
+
+**What it means.** After-close issuer headlines are a usable next-session volatility signal:
+they are known before the next trade, and the effect is large (+34% to +47%). That signal is
+the publication itself, not slowly absorbed content. This fits P3's null: what the headlines
+say adds nothing.
