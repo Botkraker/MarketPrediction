@@ -76,21 +76,22 @@ def _clean(frames):
 # ----------------------------------------------------------------------
 # METHOD 1: requests (resubmit the form, viewstate handled automatically)
 # ----------------------------------------------------------------------
-def scrape_requests(start=START, end=END, out_csv="tunindex_2010_today.csv"):
+def scrape_requests(start=START, end=END, out_csv="tunindex_2010_today.csv", ticker=TICKER):
     import requests
     from bs4 import BeautifulSoup
 
     start_dt = datetime.strptime(start, "%d/%m/%Y")
     end_dt = datetime.now() if end is None else datetime.strptime(end, "%d/%m/%Y")
+    page = f"https://www.ilboursa.com/marches/download/{ticker}"
 
     s = requests.Session()
-    s.headers.update(HEADERS)
-    r = s.get(PAGE, timeout=30)
+    s.headers.update({**HEADERS, "Referer": page})
+    r = s.get(page, timeout=30)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
     form = soup.find("form")
-    action = urljoin(PAGE, form.get("action") or "")
+    action = urljoin(page, form.get("action") or "")
 
     def base_payload():
         p = {}
@@ -222,8 +223,28 @@ def scrape_selenium(start=START, end=END, out_csv="tunindex_2010_today.csv",
 
 
 if __name__ == "__main__":
-    try:
-        scrape_requests()
-    except Exception as e:
-        print(f"requests method failed ({e}); trying selenium fallback...")
-        scrape_selenium()
+    import argparse
+    import os
+    ap = argparse.ArgumentParser(description="No arguments: Tunindex (PX1), 2010 to today.")
+    ap.add_argument("--ticker", nargs="+", help="ilboursa codes; one CSV each in --outdir")
+    ap.add_argument("--start", default=START, help="DD/MM/YYYY")
+    ap.add_argument("--end", default=END, help="DD/MM/YYYY (default today)")
+    ap.add_argument("--outdir", default="data/raw/bvmt_d2")
+    args = ap.parse_args()
+    if not args.ticker:
+        try:
+            scrape_requests()
+        except Exception as e:
+            print(f"requests method failed ({e}); trying selenium fallback...")
+            scrape_selenium()
+    else:
+        # D2 (ADR-002): firm prices, one file per ticker; an existing file is kept (resume).
+        os.makedirs(args.outdir, exist_ok=True)
+        for t in args.ticker:
+            out = os.path.join(args.outdir, f"{t}.csv")
+            if os.path.exists(out):
+                continue
+            try:
+                scrape_requests(args.start, args.end, out, ticker=t)
+            except Exception as e:
+                print(f"{t}: failed ({e})")

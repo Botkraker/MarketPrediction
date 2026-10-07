@@ -144,7 +144,12 @@ rate. Its alarms are right 2.8× as often as chance, about three weeks ahead. AU
 ilboursa publication times, P2's channel turns out to be the first reaction to issuer news
 published after the close. That news is followed by a next-trade move 34% (design) and 47%
 (sealed) bigger than usual. Pre-close news shows no clear extra move (AUDIT_REPORT §P2t).
-Next: the owner's call.
+**ADR-002 done** (2026-10-07, option B).
+- With firm prices for 2023–26 downloaded from ilboursa (D2), P2, P2t and W were rerun once,
+  unchanged (`prereg-f-v1-a1`). The after-close effect is confirmed on untouched data:
+  +43% [+30%, +56%]. P2's pooled effect holds (+15.5%), pre-close stays inconclusive, and W
+  replicates (AUDIT_REPORT §F).
+- Final report: `docs/REPORT.md`.
 
 The 2026-09-30 status follows, unchanged except where marked.
 

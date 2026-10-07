@@ -6,14 +6,14 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.12-111111?style=flat-square" alt="Python 3.12">
-  <img src="https://img.shields.io/badge/tests-121%20passing-111111?style=flat-square" alt="121 tests passing">
-  <img src="https://img.shields.io/badge/H3-pre--registered-111111?style=flat-square" alt="H3 pre-registered">
+  <img src="https://img.shields.io/badge/tests-153%20passing-111111?style=flat-square" alt="153 tests passing">
+  <img src="https://img.shields.io/badge/every%20test-pre--registered-111111?style=flat-square" alt="Every test pre-registered">
   <img src="https://img.shields.io/badge/data-DVC%20on%20DagsHub-111111?style=flat-square" alt="Data on DagsHub via DVC">
   <img src="https://img.shields.io/badge/language-French%20news-111111?style=flat-square" alt="French news">
 </p>
 
 <p align="center">
-  <strong>46,013 headlines &middot; 8 outlets &middot; 2016&ndash;2026 &middot; 3 pre-registered tests &middot; 0 of them won by the news</strong><br>
+  <strong>46,013 headlines &middot; 8 outlets &middot; 2016&ndash;2026 &middot; what the news says: no gain &middot; when firm news lands: +43%, confirmed on untouched data</strong><br>
   <sub>Sentiment from a fine-tuned CamemBERT (agreement with human labels: quadratic &kappa; 0.680), tested out of sample against a price-only model on the same trading sessions.</sub>
 </p>
 
@@ -31,8 +31,9 @@ does the news tell you anything more?
 
 ## The answer
 
-Not in a way we can measure. Adding news to a price-only model never improved a
-forecast, at any horizon.
+**What the news says: nothing we can measure.** Adding sentiment to a price-only model
+never improved a forecast of the index, at any horizon. Neither did a word list chosen by
+price reactions, for firm moves.
 
 <p align="center">
   <picture>
@@ -46,8 +47,25 @@ interval. Every interval crosses zero, and every estimate falls short of the sma
 effect the test could detect (the grey tick). The next-session forecast leans the wrong
 way: news makes it slightly worse, which matches what the earlier tests found.
 
-What does work is price history. A model that only sees past prices flags firm-level
-drops of more than 12% at 2.2 times the base rate, about 15 trading days ahead.
+**When firm news is published: it matters.** After a headline about a listed firm is
+published after the 14:10 close, that firm's next trade moves more than its own recent
+volatility predicts. The excess is about 40% of an average move. News published earlier in
+the day shows no effect we can detect.
+
+| window | after-close news | before-close news |
+|---|---|---|
+| 2016–20 (design) | +34% [+25%, +43%] | +4% [−2%, +10%] |
+| 2021–22 (sealed) | +47% [+27%, +68%] | +9%, inconclusive |
+| **2023–26 (untouched prices, ADR-002)** | **+43% [+30%, +56%]** | +6% [−5%, +18%] |
+
+Shares of the average next move, beyond each firm's own recent volatility; the smallest
+effect of interest is 10%.
+
+**Price history works on its own.** A model that only sees past prices flags firm-level drops
+of more than 12% at 2.1 times the base rate in 2019–22 and 2.5 times in 2023–26, about 15
+trading days ahead.
+
+The full write-up is [docs/REPORT.md](docs/REPORT.md).
 
 ## Turkey vs Tunisia
 
@@ -56,8 +74,9 @@ drops of more than 12% at 2.2 times the base rate, about 15 trading days ahead.
 | Market | liquid emerging market | thin frontier market, return autocorrelation +0.26 |
 | News | domestic and international outlets | about 46,000 headlines, 98% French |
 | Sentiment model | FinBERT (English finance) | CamemBERT fine-tuned on French market headlines |
-| Does sentiment help? | yes | no measurable gain (H1, H3) |
+| Does sentiment help? | yes | no measurable gain (H1, H3, and the market-labelled word list P3) |
 | Do international outlets matter more? | yes | could not be tested: too few English headlines, and the French model reads English as neutral (H2) |
+| What news does carry | not tested | timing: after-close firm news is followed by a bigger next move |
 
 ## Three questions
 
@@ -120,8 +139,8 @@ audit/           every decision, with the numbers behind it
 A few rules hold everywhere, because breaking any of them produces a result that looks
 fine and is wrong:
 
-- News dated on day D only predicts sessions after D. Headlines carry no time of day, so
-  a same-day mapping would leak.
+- News dated on day D only predicts sessions after D. Only ilboursa's headlines carry a
+  time of day (from a re-scrape), so a same-day mapping would leak for the rest.
 - Each year's sentiment comes from a model trained only on earlier labels.
 - Returns are close-to-close. In a third of rows the index file's `open` column repeats
   the previous close.
@@ -140,6 +159,7 @@ fine and is wrong:
 | The Guardian, New York Times, The Economist | English | 1,036 |
 | Tunindex daily prices, 2010–2026 | | 4,167 sessions |
 | Per-stock prices, 88 listed firms, 2010–2022 | | 187,987 rows |
+| Per-stock prices from ilboursa, 82 firms, 2022-07 → 2026-09-15 | | 59,980 rows |
 
 Two problems were found and fixed along the way. The scraped "Assabah" turned out to be
 the Moroccan newspaper rather than the Tunisian one; a geography check caught it and it
@@ -173,8 +193,9 @@ different question from whether its tone sounds positive.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 dvc pull                          # data from DagsHub
-python3 -m pytest preprocessing   # 121 tests
+python3 -m pytest preprocessing   # 153 tests
 python3 preprocessing/h3.py       # the H3 analysis, about 4 minutes on a CPU
+OMP_NUM_THREADS=1 python3 preprocessing/f.py --check   # the firm-news replication path, about 3 minutes
 ```
 
 <details>
@@ -214,8 +235,12 @@ python3 docs/make_figures.py
   not run. Every result in one table:
   [Summary of ADR-001 results](audit/AUDIT_REPORT.md#summary-of-adr-001-results), then
   [§P2t](audit/AUDIT_REPORT.md#p2t-p2s-channel-split-by-publication-time-d1-adr-001-10-2026-10-07).
-- **ADR-002** (finishing the project): **accepted, option B.** Rerun P2, P2t and W once,
-  unchanged, on firm prices for 2023–26, then write up.
+- **ADR-002** (finishing the project): **accepted, option B.** P2, P2t and W were rerun once,
+  unchanged, on firm prices for 2023–26 that no test had used.
+  - **The after-close result is confirmed:** +43% of an average move, [+30%, +56%].
+  - W replicates.
+  - Evidence: [AUDIT_REPORT §F2.4](audit/AUDIT_REPORT.md#f24-the-replication-one-run-on-2023-01-01--2026-09-15-prereg-f-v1-a1),
+    pre-registration [PREREG_F](audit/PREREG_F.md). Final report: [docs/REPORT.md](docs/REPORT.md).
 - Artifacts that no committed script rebuilds:
   [AUDIT_REPORT §8i.8](audit/AUDIT_REPORT.md#8i8-what-is-still-orphaned).
 
@@ -226,18 +251,23 @@ scrapers/        one scraper per outlet, plus Tunindex prices
 preprocessing/   corpus, labels, sentiment model, features, hypothesis tests, unit tests
 audit/           data audit, pre-registration, AUDIT_REPORT.md
 colab/           GPU notebook for training and scoring
-docs/            PRD, pipeline reference, README figure
+docs/            final report, PRD, pipeline reference, README figure
 TsEDA.ipynb      time-series exploration
 ```
 
 ## Limits
 
 The English outlets are untested, and there is no Arabic source, so the comparison the
-Turkish study cared most about could not be made. Headlines have dates but no times, which
-hides any same-day reaction. About 2,160 test sessions cannot detect effects smaller than
-the thresholds in the table. Most training labels come from language models, and one of
-them may know how events turned out; leaving out the years it labelled does not change the
-results. Per-stock prices end in 2022.
+Turkish study cared most about could not be made. About 2,160 test sessions cannot detect
+effects smaller than the thresholds in the table. Most training labels come from language
+models, and one of them may know how events turned out; leaving out the years it labelled
+does not change the results.
+
+The timing result rests on ilboursa: it is the only outlet with publication times, it
+carries about 71% of firm news, and it supplies the firm prices from 2023. Firm prices are
+not adjusted for cash dividends; one-trade moves beyond ±10% are screened out instead.
+Before-close news is never well enough measured to rule out a small effect. Details:
+[docs/REPORT.md](docs/REPORT.md) §6.
 
 ## Reference
 

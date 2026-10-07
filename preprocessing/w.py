@@ -41,11 +41,11 @@ JUMP, WARMUP, LEVELS = 0.10, 260, (0.10, 0.15, 0.20)   # P2/P3's screen; ~1 year
 SCORES = (("raw", "prob"), ("platt", "platt"), ("isotonic", "isotonic"))
 
 
-def jump_windows() -> pd.DataFrame:
+def jump_windows(end: str = "2022-12-30") -> pd.DataFrame:
     """Per (ticker, session): does the next 20-session window hold a one-session drop beyond
     -JUMP? Closes built as in h3.firm_panel (carried over sessions without a trade)."""
     cal = h3.calendar()
-    cal = cal[(cal >= "2015-06-01") & (cal <= "2022-12-30")]
+    cal = cal[(cal >= "2015-06-01") & (cal <= end)]
     a = pd.read_csv(h3.RAW / "ALL_DATA.csv", usecols=["Ticker", "Date", "Close"])
     a["Date"] = pd.to_datetime(a.Date).dt.normalize()
     a = a.drop_duplicates(["Ticker", "Date"], keep="last")

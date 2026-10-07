@@ -257,9 +257,10 @@ def issuer_patterns() -> dict[str, re.Pattern]:
     return out
 
 
-def firm_panel() -> pd.DataFrame:
+def firm_panel(end: str = "2022-12-30") -> pd.DataFrame:
+    """`end`: ADR-002 F runs H3c past ALL_DATA's last session (f.py)."""
     cal = calendar()
-    cal = cal[(cal >= "2015-06-01") & (cal <= "2022-12-30")]
+    cal = cal[(cal >= "2015-06-01") & (cal <= end)]
     a = pd.read_csv(RAW / "ALL_DATA.csv")
     a["Date"] = pd.to_datetime(a.Date).dt.normalize()
     a = a.drop_duplicates(["Ticker", "Date"], keep="last")
