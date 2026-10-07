@@ -2162,3 +2162,59 @@ Sealed after-close effects there range from +0.00505 to +0.00588.
 they are known before the next trade, and the effect is large (+34% to +47%). That signal is
 the publication itself, not slowly absorbed content. This fits P3's null: what the headlines
 say adds nothing.
+
+---
+
+## F. ADR-002 final replication: P2, P2t and W on firm prices from 2023 (2026-10-07)
+
+Plan: ADR-002, option B (owner, 2026-10-07). Freeze the repo, collect firm prices for
+2023–26 (D2), rerun P2, P2t and W once, unchanged, on that untouched window, then write up.
+
+### F2.1 Power check from headline counts (no prices)
+
+`python3 preprocessing/f.py --power` → `data/curated/f_power.json`.
+
+**What was counted.** Issuer headlines with price reports excluded, using P2t's own flag
+code (`p2t.timed_news`, `p2t.flags3`). They are mapped to BVMT calendar sessions, not firm
+trades: there are no firm prices after 2022. The same proxy is used for every window. The
+replication window is 2023-01-01 → 2026-09-15, the last canonical headline.
+
+**Rule, written before the run.**
+- GO if the larger projected g_post MDE is below the smaller lower 95% bound of g_post in
+  the design and sealed runs.
+- Projection: MDE share × √(anchor news sessions / new news sessions).
+
+**Flagged (firm, session) pairs:**
+
+| window | sessions | after close | before close | untimed | any news |
+|---|---|---|---|---|---|
+| design 2016–20 | 1,242 | 722 | 1,959 | 1,108 | 3,423 |
+| sealed 2021–22 | 504 | 220 | 641 | 297 | 1,063 |
+| F 2023 → 2026-09-15 | 915 | 442 | 873 | 792 | 1,892 |
+
+**MDE as a share of the mean |AR_1|:**
+
+| test | backtest: design → sealed, projected vs actual | projected for F (design / sealed anchor) | effect's lower 95% bound (design / sealed) |
+|---|---|---|---|
+| g_post (decisive) | 23.3% vs **29.1%** | 16.4% / **20.6%** | **25.1%** / 27.0% |
+| g_pre | 15.3% vs 20.5% | 13.1% / 17.5% | −1.8% / −5.0% |
+| P2 pooled (any news) | 11.1% vs 11.3% | 8.3% / 8.4% | 7.8% / 10.5% |
+
+**Verdict: GO.** The projected g_post MDE is 20.6%, below the 25.1% bound.
+
+**Reading:**
+- **The margin is thinner than ADR-002 estimated.** ADR-002 projected 10–12.5%. That
+  started from PREREG_P2T's *projected* sealed MDE (16.9%), not the sealed run's actual one
+  (29.1%), and scaled by sessions rather than news.
+- **The projection was optimistic for g_post in the backtest.** It predicted 23.3% and the
+  sealed run gave 29.1%, a factor of 1.25. Applied to the sealed anchor, that factor gives
+  about 26%, level with the bound.
+  - At the effects actually seen (+34% design, +47% sealed), power stays high even then.
+    With a 26% MDE the yardstick is 9.2%, so a +34% effect sits 3.7 yardsticks out.
+- **g_pre stays underpowered.** Its projected MDE of 13–18% is above the 10% SESOI, so a
+  null can only read INCONCLUSIVE (as ADR-002 expected).
+- **P2's pooled test projects below the SESOI** (8.3–8.4%). This is the one test where a
+  null could read NO EFFECT WORTH HAVING.
+- **The news mix changes.** Untimed news rises from 28% of flagged pairs (sealed) to 42%
+  (F), mostly lapresse from 2024. Untimed news has its own flag and never decides.
+- W is price-only, so no news count bears on its power.
