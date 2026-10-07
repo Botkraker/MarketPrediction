@@ -26,3 +26,16 @@ def test_confirm_needs_the_tag(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["f.py", "--confirm"])
     with pytest.raises(SystemExit):
         f.main()
+
+
+def test_gap_logs_are_finite_when_a_trade_sits_on_a_missing_calendar_day(monkeypatch):
+    """A gap of 0 sessions (a trade on a day the calendar lacks) crashed the first --confirm
+    with log(0); it is clipped at 1 session (PREREG_F §9, amendment a1)."""
+    import numpy as np
+    import p2
+    monkeypatch.setattr(p2, "panel", lambda *a, **k: pd.DataFrame({"gap": [0.0, 1.0, np.nan],
+                                                                   "back_gap": [1.0, 0.0, 2.0]}))
+    with f.frozen_code_on("2023-01-01", "2026-09-15", gaps=True, frame=pd.DataFrame()):
+        out = p2.panel()
+    assert np.isfinite(out[f.GAPS].iloc[:2].to_numpy()).all()
+    assert out.log_gap.isna().iloc[2]

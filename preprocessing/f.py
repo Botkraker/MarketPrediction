@@ -47,7 +47,7 @@ from p2_posthoc import patched
 from p3 import code_matches_tag
 
 READ = pd.read_csv                 # the real reader, kept before any swap
-TAG, F_START = "prereg-f-v1", "2023-01-01"
+TAG, F_START = "prereg-f-v1-a1", "2023-01-01"   # a1: zero gaps clipped (PREREG_F §9)
 ADR1 = ("2021-01-01", "2022-12-30")          # bench.FIRM_SEAL, FIRM_END as tagged: the check
 GAPS = ["log_gap", "log_back_gap"]           # trading-gap secondary (owner)
 
@@ -156,7 +156,8 @@ def prices() -> pd.DataFrame:
 def frozen_code_on(start: str, end: str, gaps: bool = False, frame: pd.DataFrame | None = None):
     """The tagged code on firm sessions start..end with `frame` (default prices()) read as
     ALL_DATA.csv. p2t's own tag guard is replaced by F's (main). gaps adds the two log
-    trading gaps to P2's HAR terms, which P2t also uses (secondary)."""
+    trading gaps to P2's HAR terms, which P2t also uses (secondary). A trade dated on a day
+    the calendar lacks sits 0 sessions from its neighbour; it is at least 1 (amendment a1)."""
     frame = prices() if frame is None else frame
 
     def read_csv(path, *args, **kw):
@@ -170,7 +171,7 @@ def frozen_code_on(start: str, end: str, gaps: bool = False, frame: pd.DataFrame
     if gaps:
         panel = p2.panel
         swaps += [(p2, "panel", lambda *a, **k: panel(*a, **k).pipe(
-                      lambda p: p.assign(log_gap=np.log(p.gap), log_back_gap=np.log(p.back_gap)))),
+                      lambda p: p.assign(log_gap=np.log(p.gap.clip(lower=1)), log_back_gap=np.log(p.back_gap.clip(lower=1))))),
                   (p2, "HAR", p2.HAR + GAPS)]
     with ExitStack() as stack:
         for obj, name, value in swaps:

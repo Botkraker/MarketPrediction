@@ -189,7 +189,24 @@ its prices before the tag.
 
 ## 9. Deviations
 
-None at the time of writing.
+**a1, 2026-10-07: zero trading gaps clipped at 1 session** (owner; tag `prereg-f-v1-a1`).
+
+- **What happened.** The first `f.py --confirm` under `prereg-f-v1` crashed in the
+  trading-gap secondary: `LinAlgError: SVD did not converge` in `p2.noise`, called from
+  `f.replicate` at line 207.
+  - Cause: `log(0)`. A trade dated on a day the calendar lacks sits at the same calendar slot
+    as its neighbour, so its gap reads 0 sessions. The 2016–20 design window alone has 305
+    such firm trade days, and 417 of its 68,028 volatility units have a zero gap on one
+    side.
+  - P2's and P2t's primary computations had completed in memory. Nothing was saved and no
+    number was printed: the run stops before writing `f_confirm.json`. The fix was therefore
+    chosen without sight of any result.
+- **Fix.** `log(max(gap, 1))` for both gaps: such a trade is at least one session from its
+  neighbour.
+  - Regression test: `test_f.py::test_gap_logs_are_finite_when_a_trade_sits_on_a_missing_calendar_day`.
+  - The secondary was dry-run through the same path on the already-read 2021–22 window.
+  - F's guard now requires `prereg-f-v1-a1`.
+- **Unchanged.** Decisive tests, reading, data and every other secondary.
 
 ## 10. Outputs
 
