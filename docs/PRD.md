@@ -127,7 +127,24 @@ from here. The owner chose the recommended option on all four questions: design
 new data yet. **P0 done**: the test bench passes its controls and the owner approved its
 MDE table (G0, 2026-10-06, AUDIT_REPORT §P0). **P1 done**: news flow adds no forecast of
 the next session's swing worth having, in the design window or the sealed 2024+ run
-(G1 not passed, AUDIT_REPORT §P1). Next: P2, after its interview.
+(G1 not passed, AUDIT_REPORT §P1). **P2 done**: after a day with issuer news, a firm's next
+trade moves more than its recent swings predict (sealed 2021–22: +18% of the mean move; the
+interval's lower end, 10.5%, just clears the 10% worth having). Moves with news drift
+slightly further, below the smallest effect worth having; the sealed drift excludes 0 only
+with the ±10% move screen. G2 passed on the volatility channel (AUDIT_REPORT §P2). Post-hoc
+checks on 2016–2020 (range and date controls, phantom sessions, corporate-action headlines)
+leave it in place but shrink it by 16%, to about the smallest effect worth having. G2 review
+(owner): P3's firm events target that channel; no new data. **P3 done**: a word list picked
+by price reactions adds no forecast gain worth having beyond v3 and the firm's own
+volatility, in design or sealed, and its words are unstable. G3 not passed, so the content
+route stops (Exit, AUDIT_REPORT §P3). **W done**: H3c's price-only firm drawdown warning,
+calibrated in-fold (Platt), has a Brier score of 0.215 → 0.053 and a PR-AUC 2.1× the event
+rate. Its alarms are right 2.8× as often as chance, about three weeks ahead. AUDIT_REPORT
+§W also holds one table of every ADR-001 result. **D1 + P2t done** (2026-10-07): with
+ilboursa publication times, P2's channel turns out to be the first reaction to issuer news
+published after the close. That news is followed by a next-trade move 34% (design) and 47%
+(sealed) bigger than usual. Pre-close news shows no clear extra move (AUDIT_REPORT §P2t).
+Next: the owner's call.
 
 The 2026-09-30 status follows, unchanged except where marked.
 

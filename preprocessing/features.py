@@ -43,7 +43,7 @@ RAW = ROOT / "data" / "raw"
 DEFAULT_HEADLINES = CURATED / "03_dedup.parquet"
 DEFAULT_PRICES = RAW / "bvmt" / "tunindex_2010_today.csv"
 DEFAULT_CALENDAR = AUDIT / "trading_calendar.csv"
-DEFAULT_SCORED = CURATED / "04_scored.parquet"
+DEFAULT_SCORED = CURATED / "04_scored_v3_camembert.parquet"  # the instrument every ADR-001 phase used
 DEFAULT_OUTPUT = CURATED / "daily_features.parquet"
 
 
@@ -230,7 +230,7 @@ def main() -> None:
     parser.add_argument("--start", default="2014-01-01")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--scored", default=None,
-                        help="path to 04_scored.parquet (default: curated/04_scored.parquet)")
+                        help="path to a scored corpus (default: curated/04_scored_v3_camembert.parquet)")
     args = parser.parse_args()
     frame = build(output_path=args.output, start=args.start, scored=args.scored)
     covered = int((frame["n_headlines"] > 0).sum())

@@ -206,6 +206,19 @@ python3 docs/make_figures.py
 
 </details>
 
+## Status
+
+- **ADR-001** (the pre-registered plan, P0 to P6): **executed, exited at G3.** Index news
+  flow (P1) and headline content (P3) add nothing. Firm news days are followed by a bigger
+  next move (P2), and that comes from news published after the close (P2t). P4 to P6 did
+  not run. Every result in one table:
+  [Summary of ADR-001 results](audit/AUDIT_REPORT.md#summary-of-adr-001-results), then
+  [§P2t](audit/AUDIT_REPORT.md#p2t-p2s-channel-split-by-publication-time-d1-adr-001-10-2026-10-07).
+- **ADR-002** (finishing the project): **accepted, option B.** Rerun P2, P2t and W once,
+  unchanged, on firm prices for 2023–26, then write up.
+- Artifacts that no committed script rebuilds:
+  [AUDIT_REPORT §8i.8](audit/AUDIT_REPORT.md#8i8-what-is-still-orphaned).
+
 ## Repository
 
 ```

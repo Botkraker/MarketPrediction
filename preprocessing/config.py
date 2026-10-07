@@ -123,7 +123,8 @@ CURATED_DIR_NAME = "curated"
 
 
 # --- Price-report headlines: the momentum-laundering confound -----------------
-# ~10% of relevant headlines (4,244 of 42,645) report the index's own move:
+# 3.74% of canonical headlines (1,722 of 46,013) report the index's own move
+# under the v2 pattern below (AUDIT_REPORT §8h.7b; the 10% once quoted here was v1's):
 # "Le Tunindex termine sur une note stable (+0,08%)". Their sentiment is a
 # restatement of ret_D, so a sentiment feature built on them re-encodes lagged
 # returns and can appear to "predict" ret_D+1 purely via the 0.263 return
@@ -133,7 +134,7 @@ CURATED_DIR_NAME = "curated"
 # by default would be an unjustified editorial choice. They are FLAGGED so H1 can
 # be reported three ways: all headlines, excluding price reports, and price
 # reports only (a placebo -- if sentiment only works there, it is momentum).
-# Concentrated in ilboursa (11.9%), kapitalis (11.2%), leconomistmaghrebin (9.3%).
+# By outlet: ilboursa 3.30%, kapitalis 4.71%, leconomistmaghrebin 4.62% (§8h.7b).
 # v2. v1 was `tunindex|bourse de tunis|clôtur|cloture|séance du|seance du|
 # en hausse de|en baisse de|points` and was mis-specified in both directions:
 #
