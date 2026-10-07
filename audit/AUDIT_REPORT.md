@@ -2218,3 +2218,35 @@ replication window is 2023-01-01 → 2026-09-15, the last canonical headline.
 - **The news mix changes.** Untimed news rises from 28% of flagged pairs (sealed) to 42%
   (F), mostly lapresse from 2024. Untimed news has its own flag and never decides.
 - W is price-only, so no news count bears on its power.
+
+### F2.2 D2: firm prices from ilboursa, 2022-07-01 → 2026-09-15
+
+- **Download.** `scrapers/scrape_tunindex.py --ticker <codes> --start 01/07/2022 --end 15/09/2026`
+  wrote `data/raw/bvmt_d2/`. The codes are the 83 tickers that traded in 2022-H2. Owner
+  approval: pilot 3, then all if the overlap matched.
+- **Overlap with ALL_DATA on 2022-H2** (`python3 preprocessing/f.py --overlap` →
+  `data/curated/f_d2_overlap.json`).
+  - All 82 files have the same sessions as ALL_DATA.
+  - 76 have identical closes and volumes.
+  - Six (AB, DH, MPBS, SAH, SMART, STAR) are ALL_DATA × a constant: 0.758, 0.5, 0.5, 0.972,
+    0.663, 0.231. That is ilboursa's back-adjustment for splits and free shares after 2022.
+  - Dividend payers have a factor of exactly 1: cash dividends are not adjusted.
+  - Owner: F puts those six tickers' ALL_DATA prices on D2's basis, which changes no return
+    before 2023. `f.py --check` passed again afterwards.
+- **Gaps.**
+  - AMI returns 404; it has no issuer pattern, so it is unused.
+  - 15 tickers had 85-day chunks returned as HTML: ranges with no trades. A re-download of
+    14 of them was byte-identical.
+- **Coverage.** 81 tickers, 52,562 rows from 2023. Only counts were looked at; no return
+  statistic.
+
+### F2.3 The replication path reproduces the sealed results
+
+`OMP_NUM_THREADS=1 python3 preprocessing/f.py --check` → `data/curated/f_check.json`:
+`{'p2_vol': True, 'p2t': True, 'w': True, 'pass': True}`.
+
+The F runner reaches the tagged P2, P2t and W code by swapping the window constants and
+serving `ALL_DATA.csv` reads from the joined prices. On the ADR-001 sealed window it
+reproduces `p2_confirm.json`, `p2t_confirm.json` and `w_results.json` to 1e-9.
+
+Pre-registration: `audit/PREREG_F.md`.
