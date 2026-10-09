@@ -24,7 +24,8 @@ What the news says doesn't help. When it comes out does.
 When a listed company is in the news after the market closes at 14:10, its next trade moves
 more than its recent volatility would predict. The extra movement is about 40% of an average
 move. We found it in 2016-2020, confirmed it in 2021-2022, and confirmed it again on
-2023-2026 prices that we downloaded after the test was written down and frozen. News
+2023-2026 prices whose returns nobody had looked at before the test was written down and
+frozen. News
 published during trading hours shows no effect we could detect.
 
 | Period | News after the close | News before the close |

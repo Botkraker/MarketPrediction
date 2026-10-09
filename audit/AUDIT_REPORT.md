@@ -2257,10 +2257,44 @@ Pre-registration: `audit/PREREG_F.md`.
 - `OMP_NUM_THREADS=1 python3 preprocessing/f.py --confirm` → `data/curated/f_confirm.json`.
 - W, by a guarded call of the tagged `f.w_run` (PREREG_F §9, a2) → `data/curated/f_w_confirm.json`.
 
-**Deviations** (PREREG_F §9). Both were decided without sight of any result.
+**The W call** (a2), exactly as run on 2026-10-07. It runs inside `frozen_code_on`, the same
+path as `--confirm`:
+
+```bash
+OMP_NUM_THREADS=1 python3 - <<'PY'
+import json, sys
+sys.path.insert(0, "preprocessing")
+import f
+from p3 import code_matches_tag
+out = f.h3.CURATED / "f_w_confirm.json"
+if not (f.bench.tag_exists(f.TAG) and code_matches_tag(f.TAG)) or out.exists():
+    raise SystemExit("needs the tag, the tagged code, and no earlier W run")
+with f.frozen_code_on(f.F_START, f.END):
+    res = f.w_run(f.F_START, f.END)
+print(res["rule"], "->", f.save("f_w_confirm", res))
+PY
+```
+
+**Deviations** (PREREG_F §9). Neither changed a decisive test.
 - **a1.** The first run under `prereg-f-v1` crashed on `log(0)` in the trading-gap secondary,
   before writing or printing anything. Zero gaps are now clipped at 1 session (owner).
-- **a2.** The tagged runner did not call W. W was run once, separately, with its tagged code.
+- **a2.** The tagged runner did not call W. W was run once, separately, with its tagged code,
+  after P2's and P2t's results had been seen. W's spec and rule have no free choice.
+
+**What "frozen" covers.**
+- The spec was frozen at `prereg-f-v1`, before any 2023+ return was looked at.
+  - It was shaped on 2016–2022: P2t was written after P2's sealed 2021–22 result.
+- The first `--confirm` under that tag read the 2023+ prices and finished P2 and P2t in
+  memory, then crashed in a secondary without saving or printing anything. `a1` was tagged
+  after that.
+- The models are not trained on one period and tested on another. Each regression is
+  estimated on 2023–26 itself: its coefficients, firm intercepts, bootstrap SE, random-flag
+  centring and SESOI all come from that window.
+  - Earlier prices enter only as lags (HAR terms, gaps, Dimson betas).
+  - The 2022-H2 closes also set the six rescale factors (§F2.2).
+
+**A small timing ambiguity.** 4 of D1's 26,697 headline-date keys carry two different
+publication times. `p2t.timed_news` keeps the first one listed.
 
 **Decisive family** (Holm across the three; each effect as a share of the run's mean
 |AR_1|, 0.01251):
@@ -2277,7 +2311,10 @@ nobody had analysed.
 **Units.**
 - P2t: 44,489 volatility units on 912 dates. Flagged days: 365 after close, 749 before
   close, 661 untimed.
-- P2: 47,304 firm trade days from 73 firms. Dropped:
+- P2: 44,498 volatility units, from a pool of 47,304 firm trade days and 73 firms. P2t's
+  count (44,489) differs because P2t drops phantom sessions and P2 keeps them, as each was
+  tagged. Dropped from the pool (the reasons overlap, and rows whose HAR terms are not yet
+  defined also leave through `p2.rows`):
   - previous trade more than 5 sessions back: 801;
   - next trade more than 5 sessions ahead: 861;
   - a move over 10% in the 1-trade window: 542;
